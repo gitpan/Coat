@@ -2,22 +2,21 @@ package Coat;
 
 use strict;
 use warnings;
-
-use Carp;
+use Carp 'confess';
+use Symbol;
 
 use Exporter;
 use base 'Exporter';
-use vars qw(@EXPORT $VERSION);
+use vars qw(@EXPORT $VERSION $AUTHORITY);
 
-# The current version of this library
-$VERSION = '0.1_0.2';
+# This is the mother class for each class that uses Coat
+use Coat::Object;
+
+$VERSION   = '0.1_0.3';
+$AUTHORITY = 'cpan:SUKRIA';
 
 # our exported keywords for class description
-@EXPORT = qw(var extends before after around);
-
-##############################################################################
-# Static declarations  (scope of the class)
-##############################################################################
+@EXPORT = qw(has extends before after around);
 
 # This is the class placeholder for attribute descriptions
 # it's present in scope of the class itself, not for each instance
@@ -26,17 +25,19 @@ my $CLASS_ATTRS = {};
 # local accessors for class attributes/descriptions
 
 # declare/get a class description
-sub class { $CLASS_ATTRS->{$_[0]} ||= {} }
+sub class { $CLASS_ATTRS->{ $_[0] } ||= {} }
 
 # set/get an attribute of a class
-sub class_attr { @_ == 3 ? 
-    $CLASS_ATTRS->{$_[0]}{$_[1]} = $_[2] : 
-    $CLASS_ATTRS->{$_[0]}{$_[1]} ||= {}}
+sub class_attr {
+    @_ == 3
+      ? $CLASS_ATTRS->{ $_[0] }{ $_[1] } = $_[2]
+      : $CLASS_ATTRS->{ $_[0] }{ $_[1] } ||= {};
+}
 
-sub class_exists     { exists $CLASS_ATTRS->{$_[0]}            } 
-sub class_has_attr   { exists $CLASS_ATTRS->{$_[0]}{$_[1]}     }
-sub class_set_father { $CLASS_ATTRS->{__father}{$_[0]} = $_[1] }
-sub class_get_father { $CLASS_ATTRS->{__father}{$_[0]}         }
+sub class_exists     { exists $CLASS_ATTRS->{ $_[0] } }
+sub class_has_attr   { exists $CLASS_ATTRS->{ $_[0] }{ $_[1] } }
+sub class_set_mother { $CLASS_ATTRS->{__mother}{ $_[0] } = $_[1] }
+sub class_get_mother { $CLASS_ATTRS->{__mother}{ $_[0] } }
 
 # hooks for a module
 sub hooks        { $CLASS_ATTRS->{__hooks}{ $_[0] } }
@@ -52,66 +53,114 @@ sub __copy_class_description($$) {
     }
 }
 
-# var() declares an attribute and builds the corresponding accessors
-sub var {
+# has() declares an attribute and builds the corresponding accessors
+sub has {
     my ( $name, %options ) = @_;
-    my $scope = __getscope();
+    confess "Attribute is a reference, cannot declare" if ref($name);
+
+    my $scope    = getscope();
     my $accessor = "${scope}::${name}";
 
     class_attr( $scope, $name, { type => 'Scalar', %options } );
-    
-    no strict 'refs';
-    undef *${accessor} if defined *{accessor};
-    *${accessor} = sub {
-        my ($self, $value) = @_;
-        @_ > 1 ? 
-            return $self->set($name, $value) :
-            return $self->get($name);
+
+    my $accessor_code = sub {
+        my ( $self, $value ) = @_;
+        confess "Unknown attribute '$name' for class " . ref($self)
+          unless $self->has_attr($name);
+
+        # want a set()
+        if ( @_ > 1 ) {
+            my $attrs = $self->meta;
+            my $type  = $attrs->{$name}{type};
+
+            # FIXME : this will be better when we have Coat::Types implemented
+            confess "$type '$name' cannot be set to '$value'"
+              unless ( __value_is_valid( $value, $type ) );
+
+            $self->{_values}{$name} = $value;
+            return $value;
+        }
+
+        # want a get()
+        else {
+            return $self->{_values}{$name};
+        }
     };
+
+    # now bind the subref to the appropriate symbol in the caller class
+    __bind_coderef_to_symbol( $accessor_code, $accessor );
 }
 
-# this is where inheritance takes place
+# the private method for declaring inheritance, we can here overide the
+# caller class with a random one, useful for our internal cooking, see import().
+sub __extends_class {
+    my ( $mothers, $class ) = @_;
+    $class = getscope() unless defined $class;
+
+    # the extends mechanism overwrite the @ISA list
+    { no strict 'refs'; @{"${class}::ISA"} = (); }
+
+    # then we inherit from all the mothers given
+    foreach my $mother (@$mothers) {
+        confess "Class '$mother' is unknown, cannot extends"
+          unless class_exists($mother);
+
+        # first we inherit the class description from our mother
+        __copy_class_description( $mother, $class );
+
+        # add the mother to our ancestors
+        { no strict 'refs'; push @{"${class}::ISA"}, $mother; }
+
+        # save the fact that $class inherits from $mother
+        class_set_mother( $class, $mother );
+    }
+}
+
+# the public inheritance method, takes a list of class we should inherit from
 sub extends {
-    my ($father) = @_;
-    croak "Cannot extend without a class name"
-      unless defined $father;
-
-    croak "Class '$father' is unknown, cannot extends"
-      unless class_exists($father);
-
-    my $class = __getscope();
-
-    # first we inherit the class description from our father
-    __copy_class_description( $father, $class );
-
-    # then we tell Perl we actually inherits from our father
-    eval "push \@${class}::ISA, '$father'";
-
-    # save the fact that $class inherits from $father
-    class_set_father( $class, $father ); 
+    my (@mothers) = @_;
+    confess "Cannot extend without a class name"
+      unless @mothers;
+    __extends_class( \@mothers, getscope() );
 }
 
 # returns the parent class of the class given
 sub super {
     my ($class) = @_;
-    $class = __getscope() unless defined $class;
-    return class_get_father( $class );
+    $class = getscope() unless defined $class;
+    return class_get_mother($class);
 }
 
 # local helpers for building wrapped methods
 sub __hooks_before_push { push @{ hooks_before( $_[0], $_[1] ) }, $_[2] }
 sub __hooks_after_push { push @{ hooks_after( $_[0], $_[1] ) }, $_[2] }
 sub __hooks_around_push { push @{ hooks_around( $_[0], $_[1] ) }, $_[2] }
-sub __build_sub_with_hook($$) 
-{
+
+# The idea here is to loop on each coderef given
+# and build subs to ensure the orig coderef is correctly propagated.
+# -> We rewrite the "around" hooks defined to pass their coderef neighboor as
+# a first argument.
+# (big thank to STEVAN's Class::MOP here, which was helpful with the idea of
+# $compile_around_method)
+sub __compile_around_modifier {
+    {
+        my $orig = shift;
+        return $orig unless @_;
+
+        my $hook = shift;
+        @_ = ( sub { $hook->( $orig, @_ ) }, @_ );
+        redo;
+    }
+}
+
+# This one is the wrapper builder for method with hooks.
+# It can mix up before, after and around hooks.
+sub __build_sub_with_hook($$) {
     my ( $class, $method ) = @_;
 
     my $super        = super($class);
-    my $super_method = "${super}::${method}";
-
-    my $full_method = "${class}::${method}";
-    no strict 'refs';
-    undef *${full_method};
+    my $full_method  = "${class}::${method}";
+    my $super_method = *{ qualify_to_ref( $method => $super ) };
 
     my ( $before, $after, $around ) = (
         hooks_before( $class, $method ),
@@ -119,56 +168,39 @@ sub __build_sub_with_hook($$)
         hooks_around( $class, $method )
     );
 
-    *${full_method} = sub {
+    my $modified_method_code = sub {
         my ( $self, @args ) = @_;
         my @result;
         my $result;
 
-        if (@$before) {
-            $_->(@_) for @$before;
-        }
+        $_->(@_) for @$before;
 
-        if (@$around) {
-            my $orig = \&$super_method;
-            foreach my $hook (@$around) {
-                if (wantarray) {
-                    @result = $hook->( $orig, $self, @args );
-                }
-                else {
-                    $result = $hook->( $orig, $self, @args );
-                }
-                $orig = $hook;
-            }
-        }
-        else {
-            if (wantarray) {
-                @result = &$super_method( $self, @args );
-            }
-            else {
-                $result = &$super_method( $self, @args );
-            }
-        }
+        my $around_modifier =
+          __compile_around_modifier( \&$super_method, @$around );
 
-        if (@$after) {
-            if (wantarray) {
-                @result = $_->( $self, @result, @args ) for @$after;
-            }
-            else {
-                $result = $_->( $self, $result, @args ) for @$after;
-            }
-        }
+        ( defined wantarray )
+          ? (
+            wantarray
+            ? ( @result = $around_modifier->(@_) )
+            : ( $result = $around_modifier->(@_) )
+          )
+          : ( $around_modifier->(@_) );
 
-        wantarray
-          ? return @result
-          : return $result;
+        $_->(@_) for @$after;
+
+        return unless defined wantarray;
+        return wantarray ? @result : $result;
     };
+
+    # now bind the new method to the appropriate symbol
+    __bind_coderef_to_symbol( $modified_method_code, $full_method );
 }
 
 # the before hook catches the call to an inherited method and exectue
 # the code given before the inherited method is called.
 sub before {
     my ( $method, $code ) = @_;
-    my $class = __getscope();
+    my $class = getscope();
     __hooks_before_push( $class, $method, $code );
     __build_sub_with_hook( $class, $method );
 }
@@ -177,7 +209,7 @@ sub before {
 # the code after the inherited method is called
 sub after {
     my ( $method, $code ) = @_;
-    my $class = __getscope();
+    my $class = getscope();
     __hooks_after_push( $class, $method, $code );
     __build_sub_with_hook( $class, $method );
 }
@@ -187,96 +219,40 @@ sub after {
 # args, you play !
 sub around {
     my ( $method, $code ) = @_;
-    my $class = __getscope();
+    my $class = getscope();
     __hooks_around_push( $class, $method, $code );
     __build_sub_with_hook( $class, $method );
 }
 
-##############################################################################
-# Public instance methods
-##############################################################################
+# we override the import method to actually force the "strict" and "warnings"
+# modes to children and also to force the Coat::Object inheritance.
+sub import {
+    my $caller = caller;
 
-# returns the attributes descriptions for the class of that instance
-sub attrs {
-    my ($self) = @_;
-    return class( __getscope($self) );
-}
+    # import strict and warnings
+    strict->import;
+    warnings->import;
 
-# tells if the given attribute is delcared for the class of that instance
-sub has {
-    my ( $self, $var ) = @_;
-    return class_has_attr( __getscope($self), $var );
-}
+    # delcare the class
+    class( getscope() );
 
-# init an instance : put default values and set values
-# given at instanciation time
-sub init {
-    my ( $self, %attrs ) = @_;
+    # be sure Coat::Object is known as a valid class
+    class('Coat::Object');
 
-    # default values
-    my $class_attr = $self->attrs;
-    foreach my $attr ( keys %{$class_attr} ) {
-        if ( defined $class_attr->{$attr}{default} ) {
-            $self->set( $attr, $class_attr->{$attr}{default} );
-        }
-    }
+    # force inheritance from Coat::Object
+    __extends_class( ['Coat::Object'], getscope() );
 
-    # forced values
-    foreach my $attr ( keys %attrs ) {
-        $self->set( $attr, $attrs{$attr} );
-    }
-}
-
-# The default constructor
-sub new {
-    my ( $class, %args ) = @_;
-
-    my $self = {};
-    bless $self, $class;
-
-    $self->init(%args);
-
-    return $self;
-}
-
-# accessors for the instance attributes : set
-sub set {
-    my ( $self, $attr, $value ) = @_;
-    unless ( $self->has($attr) ) {
-        croak "Unknown attribute '$attr' for class "
-          . ref($self)
-          . ", cannot set";
-    }
-
-    # check the attribute's value match its type
-    my $attrs = $self->attrs;
-    my $type  = $attrs->{$attr}{type};
-    unless ( __value_is_valid( $value, $type ) ) {
-        croak "$type '$attr' cannot be set to '$value'";
-    }
-
-    $self->{_values}{$attr} = $value;
-    return $value;
-}
-
-# accessors for the instance attributes : get
-sub get {
-    my ( $self, $attr ) = @_;
-    unless ( $self->has($attr) ) {
-        croak "Unknown attribute '$attr' for class "
-          . ref($self)
-          . ", cannot get";
-    }
-    return $self->{_values}{$attr};
+    return if $caller eq 'main';
+    Coat->export_to_level( 1, @_ );
 }
 
 ##############################################################################
-# Private methods
+# Protected methods (only called from Coat::* friends)
 ##############################################################################
 
 # The scope is used for saving attribute properties, we want to have
 # one namespace per class that inherits from us
-sub __getscope {
+sub getscope {
     my ($self) = @_;
 
     if ( defined $self ) {
@@ -284,6 +260,19 @@ sub __getscope {
     }
     else {
         return ( scalar( caller(1) ) );
+    }
+}
+
+##############################################################################
+# Private methods (only called from Coat.pm)
+##############################################################################
+
+sub __bind_coderef_to_symbol($$) {
+    my ( $coderef, $symbol ) = @_;
+    {
+        no strict 'refs';
+        no warnings 'redefine', 'prototype';
+        *$symbol = $coderef;
     }
 }
 
@@ -322,32 +311,6 @@ sub __value_is_valid($$) {
     }
 }
 
-
-
-##############################################################################
-# Loading time cooking
-##############################################################################
-
-# we override the import method to actually force the "strict" and "warnings"
-# modes to children.
-sub import {
-    my $caller = caller;
-
-    # import strict and warnings
-    strict->import;
-    warnings->import;
-    
-    # delcare the class
-    class(__getscope());
-    
-    # forced inheritance to caller
-    eval "push \@${caller}::ISA, 'Coat'";
-    croak "Unable to inherit from Coat : $@" if $@;
-
-    return if $caller eq 'main';
-    Coat->export_to_level( 1, @_ );
-}
-
 1;
 __END__
 
@@ -355,35 +318,47 @@ __END__
 
 =head1 NAME
 
-Coat -- a meta class for building light objects with accessors
+Coat -- A light and self-dependant meta-class for Perl5
 
 =head1 DESCRIPTION
 
-This module was inspired by the excellent Moose meta class which provides
-enhanced object creation for Perl 5.
+This module was inspired by the excellent C<Moose> meta class which provides
+enhanced object creation for Perl5.
 
-Moose is great, but slow and has huge dependencies which makes it difficult to
+Moose is great, but has huge dependencies which makes it difficult to
 use in restricted environments.
 
-This module implements the basic goodness of Moose, namely the accessor
-automagic. 
+This module implements the basic goodness of Moose, namely accessors
+automagic, hook modifiers and inheritance facilities. 
 
-B<It is not Moose>
-
-It is designed for developers who want to write clean object code with Perl 5
-without depending on Moose. This implies you don't rely on all the features of
-Moose; and you don't depend on a huge set of dependencies, all you have to
-install is Coat (which is independant, no need of external modules).
+B<It is not Moose> but the small bunch of features provided are
+B<Moose-compatible>. That means you can start with Coat and, if later you
+get to the point where you can or want to upgrade to Moose, your code won't
+have to change : every features provided by Coat exist in the Moose's API (but
+the opposite is not true, as you can imagine).
 
 =head1 SYNTAX
 
+When you define a class with C<Coat> (eg: use Coat;), you declare a class that
+inherits from the main C<Coat> mother-class: C<Coat::Object>. C<Coat> is the
+meta-class, C<Coat::Object> is the mother-class. 
+
+The meta-class will help you define the class itself (inheritance, attributes,
+method modifiers) and the mother-class will provide to your class a set of
+default instance-methods such as a constructor and default accessors for your
+attributes.
+
+Here is a basic example with a class "Point": 
+
     package Point;
     use Coat;  # once the use is done, the class already 
-               # inherits from it
+               # inherits from Coat::Object, the mother-class.
 
-    var 'x' => (type => 'Int', default => 0);
-    var 'y' => (type => 'Int', default => 0);
+    # describe attributes...
+    has 'x' => (type => 'Int', default => 0);
+    has 'y' => (type => 'Int', default => 0);
 
+    # and your done
     1;
 
     my $point = new Point x => 2, y => 4;
@@ -391,51 +366,20 @@ install is Coat (which is independant, no need of external modules).
     $point->y;    # returns 4
     $point->x(9); # returns 9
 
-Note that we don't need to import "strict" and "warnings" modules as
-Coat propagates them to our class (use strict and use warnings are
-implicit in our class).
+Note that there's no need to import the "strict" and "warnings" modules, it's
+already exported by Coat when you use it.
 
 =head1 STATIC METHODS
 
-=head2 var 'name' => %options
+Coat provides you with static methods you use to define your class.
+They're respectingly dedicated to set inheritance, declare attributes
+and define method modifiers (hooks).
 
-The static method B<var> allows you to define attributes for your class.
-Attributes declared this way will be available in the objects
-(accessors will let you get and set it).
+=head2 INHERITANCE
 
-This static method is similar to Moose's B<has> method.
-
-You can handle each attribute options with the %options hashtable. The
-following options are supported:
-
-=head3 type
-
-The attribute's type, put here either a class name or one of the 
-supported type: 
-
-=over 4
-
-=item Int
-
-=item String
-
-=item Boolean
-
-=back
-
-
-=head3 default
-
-The attribute's default value (the attribute will have this
-value at instanciation time if none given).
-
-=back
-
-=head2 extends
-
-The keyword "extends" allows you to declare that a class "foo" inherits from a
-class "bar". All attributes properties of class "bar" will be applied to class
-"foo" as well as the accessors of class "bar".
+The keyword "extends" allows you to declare that a class "Child" inherits from a
+class "Parent". All attributes properties of class "Parent" will be applied to class
+"Child" as well as the accessors of class "Parent".
 
 Here is an example with Point3D, an extension of Point previously declared in
 this documentation:
@@ -445,16 +389,32 @@ this documentation:
   use Coat;
   extends 'Point';
 
-  var 'z' => (type => 'Int', default => 0):
+  has 'z' => (type => 'Int', default => 0):
 
   my $point3d = new Point3D x => 1, y => 3, z => 1;
   $point3d->x;    # will return: 1
   $point3d->y;    # will return: 3
   $point3d->z;    # will return: 1
 
-=head1 HOOKS
+=head2 ATTRIBUTES AND ACCESSORS
 
-Like Moose, Coat lets you define hooks. There are three kind of hooks :
+The static method B<has> allows you to define attributes for your class.
+
+You can handle each attribute options with the %options hashtable. The
+following options are supported:
+
+=head3 type
+
+More to come later here...
+
+=head3 default
+
+The attribute's default value (the attribute will have this
+value at instanciation time if none given).
+
+=head1 METHOD MODIFIERS (HOOKS)
+
+Like C<Moose>, Coat lets you define hooks. There are three kind of hooks :
 before, after and around.
 
 =head2 before
@@ -482,8 +442,8 @@ Example:
 =head2 after
 
 When writing an "after" hook you can catch the call to an inherited method and 
-execute xome code after the original method is executed. You receive in your
-hook the result of the father's method.
+execute some code after the original method is executed. You receive in your
+hook the result of the mother's method.
 
 Example:
 
@@ -496,15 +456,18 @@ Example:
   use Coat;
   extends 'Foo';
 
+  my $flag;
+
   after 'method' => sub {
-    my ($self, $result, @args) = @_;
-    return $result + 3;
+    my ($self, @args) = @_;
+    $flag = 1;
   };
 
 =head2 around
 
 When writing an "around" hook you can catch the call to an inherited method and 
 actually redefine it on-the-fly.
+
 You get the code reference to the parent's method and its arguments, and can
 do what you want then. It's a very powerful hook but also dangerous, so be
 careful when writing such a hook not to break the original call.
@@ -520,9 +483,6 @@ Example:
   use Coat;
   extends 'Foo';
 
-  # the following around hook implement the previous 'after' hook 
-  # defined in this documentaiton.
-
   around 'method' => sub {
     my $orig = shift;
     my ($self, @args) = @_;
@@ -531,13 +491,22 @@ Example:
     return $res + 3;
   }
 
-=head1 AUTHOR
+=head1 SEE ALSO
 
-Coat was written by Alexis Sukrieh <sukria+perl@sukria.net>
+C<Moose> is the mother of Coat, every concept inside Coat was friendly stolen
+from it, you definitely want to look at C<Moose>.
 
-=head1 COPYING
+=head1 AUTHORS
 
-Coat is copyright (c) 2007 Alexis Sukrieh.
+This module was written by Alexis Sukrieh E<lt>sukria+perl@sukria.netE<gt>
+
+Strong and helpful reviews were made by Stevan Little and 
+Matt (mst) Trout ; this module wouldn't be there without their help.
+Huge thank to them.
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2007 by Alexis Sukrieh.
 
 L<http://www.sukria.net/perl/coat/>
 
@@ -545,4 +514,3 @@ This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 
 
 =cut
-
