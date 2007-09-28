@@ -4,10 +4,6 @@ use strict;
 use warnings;
 use Carp 'confess';
 use Scalar::Util 'reftype';
-use vars qw($VERSION $AUTHORITY);
-
-$VERSION   = '0.1_0.4';
-$AUTHORITY = 'cpan:SUKRIA';
 
 # This is the classes placeholder for attribute descriptions
 my $CLASSES = {};
@@ -98,15 +94,13 @@ sub has($$$)
 }
 
 # This will build the attributes for a class with all inherited attributes
-sub all_attributes($$;$);
-sub all_attributes($$;$)
+sub all_attributes
 {
     my ($self, $class, $hash) = @_;
     $hash = {} unless defined $hash;
 
-    # start with the parents so we can overwrite their attrs
-    foreach my $parent (@{ Coat::Meta->parents( $class ) }) {
-        $hash = Coat::Meta->all_attributes($parent, $hash);
+    foreach my $parent (@{ Coat::Meta->family( $class ) }) {
+        $hash = { %{ $hash }, %{ Coat::Meta->attributes( $parent ) } };
     }
     
     $hash = { %{ $hash }, %{ Coat::Meta->attributes( $class ) } };

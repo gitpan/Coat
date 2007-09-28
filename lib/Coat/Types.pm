@@ -1,24 +1,226 @@
+
+{
+    package Coat::Type;
+
+    use strict;
+    use warnings;
+    use Carp 'confess';
+
+    sub is_valid   { confess "is_valid Cannot be called from interface Coat::Type" }
+}
+{
+    package Coat::Type::Any;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type';
+
+    sub is_valid { 1 }
+}
+
+{
+    package Coat::Type::Item;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type';
+
+    sub is_valid { 1 }
+}
+{
+    package Coat::Type::Item::Bool;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item';
+
+    # A boolean must be defined and equal to 0 or 1
+    sub is_valid { 
+        (defined $_[1]) 
+        ? ( ($_[1] == 0 || $_[1] == 1) 
+            ? 1
+            : 0)
+        : 0
+    }
+}
+{
+    package Coat::Type::Item::Defined;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item';
+
+
+    sub is_valid {
+        (defined $_[1])
+        ? 1
+        : 0
+    }
+}
+{
+    package Coat::Type::Item::Undef;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item';
+
+    sub is_valid 
+    {
+        (! defined $_[1])
+        ? 1
+        : 0
+    }
+}
+{
+    package Coat::Type::Item::Defined::Ref;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item::Defined';
+
+    sub is_valid { 
+        my ($class, $value) = @_;    
+        ($class->SUPER::is_valid($value))
+        ? ((ref $value)
+            ? 1
+            : 0)
+        : 0
+    }
+}
+{
+    package Coat::Type::Item::Defined::Value;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item::Defined';
+
+
+    sub is_valid { 
+        $_[0]->SUPER::is_valid($_[1]) && ( ! ref $_[1] ) ;
+    }
+}
+{
+    package Coat::Type::Item::Defined::Value::Num;
+
+    use strict;
+    use warnings;
+    use Scalar::Util qw(looks_like_number);
+
+    use base 'Coat::Type::Item::Defined::Value';
+
+    sub is_valid { $_[0]->SUPER::is_valid($_[1]) && looks_like_number( "$_[1]" ) }
+}
+{
+    package Coat::Type::Item::Defined::Value::Str;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item::Defined::Value';
+
+    sub is_valid { 
+        $_[0]->SUPER::is_valid($_[1])
+    }
+}
+{
+    package Coat::Type::Item::Defined::Value::Num::Int;
+
+    use strict;
+    use warnings;
+    use Scalar::Util qw(looks_like_number);
+
+    use base 'Coat::Type::Item::Defined::Value::Num';
+
+    sub is_valid {
+        $_[0]->SUPER::is_valid( $_[1] ) && ( looks_like_number( "$_[1]" ) == 1 );
+    }
+}
+{
+    package Coat::Type::Item::Defined::Value::Str::ClassName;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item::Defined::Value::Str';
+
+    sub is_valid 
+    { 
+        my ($class, $classname, $value) = @_;
+        
+        return (defined $value) && 
+            (ref $value) &&
+            (ref $value eq $classname);
+    }
+}
+{
+    package Coat::Type::Item::Defined::Ref::ArrayRef;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item::Defined::Ref';
+
+    sub is_valid {
+        $_[0]->SUPER::is_valid($_[1]) && 
+        ((ref $_[1]) eq 'ARRAY');
+    }
+}
+{
+    package Coat::Type::Item::Defined::Ref::CodeRef;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item::Defined::Ref';
+
+    sub is_valid {
+        $_[0]->SUPER::is_valid($_[1]) && 
+        ((ref $_[1]) eq 'CODE');
+    }
+}
+{
+    package Coat::Type::Item::Defined::Ref::HashRef;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item::Defined::Ref';
+
+    sub is_valid {
+        $_[0]->SUPER::is_valid($_[1]) && 
+        ((ref $_[1]) eq 'HASH');
+    }
+}
+{
+    package Coat::Type::Item::Defined::Ref::ScalarRef;
+
+    use strict;
+    use warnings;
+
+    use base 'Coat::Type::Item::Defined::Ref';
+
+    sub is_valid {
+        $_[0]->SUPER::is_valid($_[1]) && 
+        ((ref $_[1]) eq 'SCALAR');
+    }
+}
+
+# Types 
+
 package Coat::Types;
 
 use strict;
 use warnings;
 use Carp 'confess';
 
-use Coat::Type::Any;
-use Coat::Type::Item;
-use Coat::Type::Item::Bool;
-use Coat::Type::Item::Undef;
-use Coat::Type::Item::Defined;
-use Coat::Type::Item::Defined::Value;
-use Coat::Type::Item::Defined::Value::Num;
-use Coat::Type::Item::Defined::Value::Num::Int;
-use Coat::Type::Item::Defined::Value::Str;
-use Coat::Type::Item::Defined::Value::Str::ClassName;
-use Coat::Type::Item::Defined::Ref;
-use Coat::Type::Item::Defined::Ref::ScalarRef;
-use Coat::Type::Item::Defined::Ref::ArrayRef;
-use Coat::Type::Item::Defined::Ref::HashRef;
-use Coat::Type::Item::Defined::Ref::CodeRef;
+my $cache = {};
 
 sub validate
 {
@@ -42,6 +244,11 @@ sub validate
         RegexpRef => 'Coat::Type::Item::Defined::Ref::RegexpRef',
     };
 
+    # cache
+    if (defined $value) {
+        return 1 if exists $cache->{$isa}{$value};
+    }
+
     if (exists $isa_class->{$isa}) {
         my $type = $isa_class->{$isa};
         $type->is_valid($value) 
@@ -61,6 +268,8 @@ sub validate
                 . " is not a member of class '$classname' "
                 . "for attribute '$attribute'";
     }
+
+    return $cache->{$isa}{$value} = 1;
 }
 
 1;
@@ -128,3 +337,4 @@ This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 
 
 =cut
+

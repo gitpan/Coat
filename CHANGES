@@ -1,3 +1,8 @@
+2007-09-28 -- release 0.1_0.5
+
+    * added Coat::Types for type constraints validation
+    * bug fixes
+
 2007-09-17 -- release 0.1_0.2 -- Alexis Sukrieh
 
     * development version, according to Perl versionning conventions.
