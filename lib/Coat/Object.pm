@@ -3,6 +3,7 @@ package Coat::Object;
 use strict;
 use warnings;
 use Coat::Meta;
+use Carp 'confess';
 
 # this is the mother-class of each Coat objects, it provides
 # basic instance methods such as a constructor
@@ -29,22 +30,45 @@ sub meta {
 # given at instanciation time
 sub init {
     my ( $self, %attrs ) = @_;
-
-    # default values
     my $class_attr = Coat::Meta->all_attributes( ref( $self ) );
+
+    
+    # setting all default values
     foreach my $attr ( keys %{$class_attr} ) {
+        # handling default values
         if ( defined $class_attr->{$attr}{'default'} ) {
+            # saving original permission and setting it to read/write
+            my $is = $class_attr->{$attr}{'is'};
+            $class_attr->{$attr}{'is'} = 'rw';
+            
+            # setting the default value
             my $default = $class_attr->{$attr}{'default'};
             ref $default
               ? $self->$attr( &$default(@_) ) # we have a CODE ref
               : $self->$attr( $default );     # we have a plain scalar
+    
+            # restoring original permissions
+            $class_attr->{$attr}{'is'} = $is;
         }
+         
+        # a required read-only field must have a default value or be set at
+        # instanciation time
+        confess "Attribute ($attr) is required"
+            if ($class_attr->{$attr}{'required'} &&
+                $class_attr->{$attr}{'is'} eq 'ro' &&
+                (! defined $class_attr->{$attr}{'default'}) && 
+                (! exists $attrs{$attr}));
     }
 
-    # forced values
+    # setting values given at instanciation time
     foreach my $attr ( keys %attrs ) {
+        my $is = $class_attr->{$attr}{'is'};
+        
+        $class_attr->{$attr}{'is'} = 'rw';
         $self->$attr( $attrs{$attr} );
+        $class_attr->{$attr}{'is'} = $is;
     }
+
 
     # try to run the BUILD method, if exists
     my $build_sub;

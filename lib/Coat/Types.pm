@@ -1,3 +1,10 @@
+{
+    package Util;
+    sub looks_like_number {
+        my $val = shift;
+        $val =~ /^[\d\.]+$/;
+    }
+}
 
 {
     package Coat::Type;
@@ -111,11 +118,10 @@
 
     use strict;
     use warnings;
-    use Scalar::Util qw(looks_like_number);
 
     use base 'Coat::Type::Item::Defined::Value';
 
-    sub is_valid { $_[0]->SUPER::is_valid($_[1]) && looks_like_number( "$_[1]" ) }
+    sub is_valid { $_[0]->SUPER::is_valid($_[1]) && Util::looks_like_number( "$_[1]" ) }
 }
 {
     package Coat::Type::Item::Defined::Value::Str;
@@ -134,12 +140,11 @@
 
     use strict;
     use warnings;
-    use Scalar::Util qw(looks_like_number);
 
     use base 'Coat::Type::Item::Defined::Value::Num';
 
     sub is_valid {
-        $_[0]->SUPER::is_valid( $_[1] ) && ( looks_like_number( "$_[1]" ) == 1 );
+        $_[0]->SUPER::is_valid( $_[1] ) && ( Util::looks_like_number( "$_[1]" ) == 1 );
     }
 }
 {
@@ -224,7 +229,9 @@ my $cache = {};
 
 sub validate
 {
-    my ($class, $isa, $attribute, $value) = @_;
+    my ($class, $attr, $attribute, $value) = @_;
+    my $isa = $attr->{isa};
+
     my $isa_class = {
         Any       => 'Coat::Type::Any',
         Item      => 'Coat::Type::Item',
@@ -244,11 +251,14 @@ sub validate
         RegexpRef => 'Coat::Type::Item::Defined::Ref::RegexpRef',
     };
 
-    # cache
-    if (defined $value) {
-        return 1 if exists $cache->{$isa}{$value};
-    }
+    # Exception if not defined and required attribute 
+    confess "Attribute \($attribute\) is required and cannot be undef" 
+        if ($attr->{required} && ! defined $value);
 
+    # Bypass the type check if not defined and not required
+    return 1 if (! defined $value && ! $attr->{required});
+
+    # now normal type constraint checks
     if (exists $isa_class->{$isa}) {
         my $type = $isa_class->{$isa};
         $type->is_valid($value) 
@@ -268,8 +278,6 @@ sub validate
                 . " is not a member of class '$classname' "
                 . "for attribute '$attribute'";
     }
-
-    return $cache->{$isa}{$value} = 1;
 }
 
 1;

@@ -29,7 +29,7 @@ sub class
 # children
 sub attribute 
 {
-    my ($self, $class, $attribute, $value) = @_;
+    my ($self, $class, $attribute, $attr_desc) = @_;
         
     # the attribute description may already exist 
     my $desc = Coat::Meta->has( $class, $attribute ); 
@@ -42,6 +42,13 @@ sub attribute
         $desc->{isa} = 'Any' unless exists $desc->{isa};
         $desc->{is}  = 'rw'  unless exists $desc->{is};
 
+        # if a trigger is set, must be a coderef
+        if (defined $attr_desc->{'trigger'}) {
+            my $trigger = $attr_desc->{'trigger'};
+            confess "The trigger option must be passed a code reference" 
+                unless ref $trigger && (ref $trigger eq 'CODE');
+        }
+
         # check attribute description
         if (defined $desc->{default}) {
             if (( ref($desc->{default})) && 
@@ -51,7 +58,7 @@ sub attribute
             }
         }
 
-        return $CLASSES->{ $class }{ $attribute } = { %{$desc}, %{$value}};
+        return $CLASSES->{ $class }{ $attribute } = { %{$desc}, %{$attr_desc}};
     }
 
     # we have to return the attribute description

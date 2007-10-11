@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Carp 'confess';
 use Symbol;
+use B 'svref_2object';
 
 use Exporter;
 use base 'Exporter';
@@ -13,7 +14,7 @@ use Coat::Meta;
 use Coat::Object;
 use Coat::Types;
 
-$VERSION   = '0.1_0.5';
+$VERSION   = '0.1_0.6';
 $AUTHORITY = 'cpan:SUKRIA';
 
 # our exported keywords for class description
@@ -35,7 +36,7 @@ sub has {
     my ( $attribute, %options ) = @_;
     confess "Attribute is a reference, cannot declare" if ref($attribute);
 
-    my $class    = getscope();
+    my $class    = $options{'!caller'} || getscope();
     my $accessor = "${class}::${attribute}";
 
     my $attr = Coat::Meta->attribute( $class, $attribute, \%options);
@@ -45,8 +46,17 @@ sub has {
         
         # want a set()
         if ( @_ > 1 ) {
-            Coat::Types->validate( $attr->{'isa'}, $attribute, $value );
-            return $self->{$attribute} = $value;
+            confess "Cannot set a read-only attribute ($attribute)" 
+                if ($attr->{'is'} eq 'ro');
+
+            Coat::Types->validate( $attr, $attribute, $value );
+            $self->{$attribute} = $value;
+
+            # handle the trigger, if exists
+            $attr->{'trigger'}->($self, $value) 
+                if defined $attr->{'trigger'};
+            
+            return $value;
         }
 
         # want a get()
@@ -99,6 +109,7 @@ sub around {
 # modes to children and also to force the Coat::Object inheritance.
 sub import {
     my $caller = caller;
+    return if $caller eq 'main';
 
     # import strict and warnings
     strict->import;
@@ -113,8 +124,32 @@ sub import {
     # force inheritance from Coat::Object
     _extends_class( ['Coat::Object'], getscope() );
 
-    return if $caller eq 'main';
     Coat->export_to_level( 1, @_ );
+}
+
+# clean the namespace when the module is unloaded (no Coat).
+# This is mostly stolen from Moose.
+sub unimport {
+    no strict 'refs';
+    my $class = caller();
+
+    # loop through the exports ...
+    foreach my $name ( @EXPORT ) {
+
+        # if we find one ...
+        if ( defined &{ $class . '::' . $name } ) {
+            my $keyword = \&{ $class . '::' . $name };
+
+            # make sure it is from Coat
+            my $pkg_name =
+                eval { svref_2object($keyword)->GV->STASH->NAME };
+            next if $@;
+            next if $pkg_name ne 'Coat';
+
+            # and if it is from Coat then undef the slot
+            delete ${ $class . '::' }{$name};
+        }
+    }
 }
 
 ##############################################################################
@@ -130,7 +165,7 @@ sub getscope {
         return ref($self);
     }
     else {
-        return ( scalar( caller(1) ) );
+        return scalar caller 1;
     }
 }
 
@@ -259,13 +294,11 @@ the opposite is not true, as you can imagine).
 =head1 SYNTAX
 
 When you define a class with C<Coat> (eg: use Coat;), you declare a class that
-inherits from the main C<Coat> mother-class: C<Coat::Object>. C<Coat> is the
-meta-class, C<Coat::Object> is the mother-class. 
+inherits from the main mother-class: L<Coat::Object>. 
 
-The meta-class will help you define the class itself (inheritance, attributes,
-method modifiers) and the mother-class will provide to your class a set of
-default instance-methods such as a constructor and default accessors for your
-attributes.
+The I<Coat> module itself exports all the symbols needed to build a class and 
+L<Coat::Meta> provides access to the meta class informations (attribute descriptions,
+inheritance data, etc).
 
 Here is a basic example with a class "Point": 
 
@@ -317,25 +350,50 @@ this documentation:
 
 =head2 ATTRIBUTES AND ACCESSORS
 
-The static method B<has> allows you to define attributes for your class.
+The static method B<has> allows you to define attributes for your class; it
+should be used like the following:
 
-You can handle each attribute options with the %options hashtable. The
-following options are supported:
+B<has $name =E<gt> %options>
 
-=head3 isa
+This will install an attribute of a given C<$name> into the current class. 
+The following options are supported:
 
-When declaring an attribute, it is possible to restrict allowed values 
-to those that validate a type.
+=over 4
 
-See Coat::Types for supported types.
+=item I<is =E<gt> 'rw'|'ro'>
 
-=head3 default
+The I<is> option accepts either I<rw> (for read/write) or I<ro> (for read 
+only). These will create either a read/write accessor or a read-only 
+accessor respectively, using the same name as the C<$name> of the attribute.
 
-The attribute's default value (the attribute will have this
-value at instanciation time if none given).
+=item I<isa =E<gt> $type_name>
 
+The I<isa> option uses Coat's type constraint facilities to set up runtime 
+type checking for this attribute. Coat will perform the checks during class 
+construction, and within any accessors. The C<$type_name> argument must be a 
+string. The string may be either a class name or a type defined by
+L<Coat::Types>.
+
+=item I<required =E<gt> (1|0)>
+
+This marks the attribute as being required. This means a I<defined> value must be 
+supplied during class construction, and the attribute may never be set to 
+C<undef> with an accessor. 
+
+=item I<default>
+
+Change the default value of an attribute.
 Be aware that like with Moose, only plain scalars and code references are allowed 
 when declaring a default value (wrap other references in subs).
+
+=item I<trigger =E<gt> $code>
+
+The I<trigger> option is a CODE reference which will be called after the value of
+the attribute is set. The CODE ref will be passed the instance itself, the
+updated value and the attribute meta-object (this is for more advanced fiddling
+and can typically be ignored). You B<cannot> have a trigger on a read-only
+attribute.
+
 
 =head2 METHOD MODIFIERS (HOOKS)
 
@@ -358,7 +416,7 @@ Example:
   use Coat;
   extends 'Foo';
 
-  around 'method' => sub {
+  before 'method' => sub {
     my ($self, @args) = @_;
     # ... here some stuff to do before Foo::method is called
   };
@@ -418,8 +476,8 @@ Example:
 
 =head1 SEE ALSO
 
-C<Moose> is the mother of Coat, every concept inside Coat was friendly stolen
-from it, you definitely want to look at C<Moose>.
+L<Moose> is the mother of Coat, every concept inside Coat was friendly stolen
+from it, you definitely want to look at it.
 
 =head1 AUTHORS
 
