@@ -14,7 +14,7 @@ use Coat::Meta;
 use Coat::Object;
 use Coat::Types;
 
-$VERSION   = '0.1_0.6';
+$VERSION   = '0.2';
 $AUTHORITY = 'cpan:SUKRIA';
 
 # our exported keywords for class description
@@ -49,7 +49,7 @@ sub has {
             confess "Cannot set a read-only attribute ($attribute)" 
                 if ($attr->{'is'} eq 'ro');
 
-            Coat::Types->validate( $attr, $attribute, $value );
+            $value = Coat::Types->validate( $attr, $attribute, $value );
             $self->{$attribute} = $value;
 
             # handle the trigger, if exists
@@ -195,9 +195,24 @@ sub _compile_around_modifier(@) {
 sub _build_sub_with_hook($$) {
     my ( $class, $method ) = @_;
 
-    my $parents      = Coat::Meta->parents( $class );
-    # FIXME : we have to find the good super: the one who provides the sub
-    my $super = $parents->[scalar(@$parents) - 1];
+    my $parents = Coat::Meta->family( $class );
+    my $super   = undef;
+
+    # we have to find where in the inheritance tree $super is providing
+    # $method
+    foreach my $parent_class (@$parents) {
+        # looking for the first inherited method
+        my $coderef;
+        { 
+            no strict 'refs'; 
+            $coderef = *{ "${parent_class}::${method}" };
+        }
+        $super = $parent_class if defined &$coderef;
+    }
+
+    # $method not found, something is wrong there
+    confess "Unable to find method \"$method\" in inherited classes"
+        unless defined $super;
 
     my $full_method  = "${class}::${method}";
     my $super_method = *{ qualify_to_ref( $method => $super ) };
@@ -244,8 +259,12 @@ sub _extends_class($;$) {
 
     # then we inherit from all the mothers given, if they are valid
     foreach my $mother (@$mothers) {
-        confess "Class '$mother' is unknown, cannot extends"
-          unless Coat::Meta->exists($mother);
+        # class is unknown, never been loaded, let's try to import it
+        unless ( Coat::Meta->exists($mother) ) {
+            eval "use $mother";
+            confess "Failed to load class '$mother' : $@" if $@;
+            $mother->import;
+        }
         Coat::Meta->extends( $class, $mother );
     }
 

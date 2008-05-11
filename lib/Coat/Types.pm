@@ -1,255 +1,132 @@
-{
-    package Util;
-    sub looks_like_number {
-        my $val = shift;
-        $val =~ /^[\d\.]+$/;
-    }
-}
-
-{
-    package Coat::Type;
-
-    use strict;
-    use warnings;
-    use Carp 'confess';
-
-    sub is_valid   { confess "is_valid Cannot be called from interface Coat::Type" }
-}
-{
-    package Coat::Type::Any;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type';
-
-    sub is_valid { 1 }
-}
-
-{
-    package Coat::Type::Item;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type';
-
-    sub is_valid { 1 }
-}
-{
-    package Coat::Type::Item::Bool;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item';
-
-    # A boolean must be defined and equal to 0 or 1
-    sub is_valid { 
-        (defined $_[1]) 
-        ? ( ($_[1] == 0 || $_[1] == 1) 
-            ? 1
-            : 0)
-        : 0
-    }
-}
-{
-    package Coat::Type::Item::Defined;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item';
-
-
-    sub is_valid {
-        (defined $_[1])
-        ? 1
-        : 0
-    }
-}
-{
-    package Coat::Type::Item::Undef;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item';
-
-    sub is_valid 
-    {
-        (! defined $_[1])
-        ? 1
-        : 0
-    }
-}
-{
-    package Coat::Type::Item::Defined::Ref;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item::Defined';
-
-    sub is_valid { 
-        my ($class, $value) = @_;    
-        ($class->SUPER::is_valid($value))
-        ? ((ref $value)
-            ? 1
-            : 0)
-        : 0
-    }
-}
-{
-    package Coat::Type::Item::Defined::Value;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item::Defined';
-
-
-    sub is_valid { 
-        $_[0]->SUPER::is_valid($_[1]) && ( ! ref $_[1] ) ;
-    }
-}
-{
-    package Coat::Type::Item::Defined::Value::Num;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item::Defined::Value';
-
-    sub is_valid { $_[0]->SUPER::is_valid($_[1]) && Util::looks_like_number( "$_[1]" ) }
-}
-{
-    package Coat::Type::Item::Defined::Value::Str;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item::Defined::Value';
-
-    sub is_valid { 
-        $_[0]->SUPER::is_valid($_[1])
-    }
-}
-{
-    package Coat::Type::Item::Defined::Value::Num::Int;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item::Defined::Value::Num';
-
-    sub is_valid {
-        $_[0]->SUPER::is_valid( $_[1] ) && ( Util::looks_like_number( "$_[1]" ) == 1 );
-    }
-}
-{
-    package Coat::Type::Item::Defined::Value::Str::ClassName;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item::Defined::Value::Str';
-
-    sub is_valid 
-    { 
-        my ($class, $classname, $value) = @_;
-        
-        return (defined $value) && 
-            (ref $value) &&
-            (ref $value eq $classname);
-    }
-}
-{
-    package Coat::Type::Item::Defined::Ref::ArrayRef;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item::Defined::Ref';
-
-    sub is_valid {
-        $_[0]->SUPER::is_valid($_[1]) && 
-        ((ref $_[1]) eq 'ARRAY');
-    }
-}
-{
-    package Coat::Type::Item::Defined::Ref::CodeRef;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item::Defined::Ref';
-
-    sub is_valid {
-        $_[0]->SUPER::is_valid($_[1]) && 
-        ((ref $_[1]) eq 'CODE');
-    }
-}
-{
-    package Coat::Type::Item::Defined::Ref::HashRef;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item::Defined::Ref';
-
-    sub is_valid {
-        $_[0]->SUPER::is_valid($_[1]) && 
-        ((ref $_[1]) eq 'HASH');
-    }
-}
-{
-    package Coat::Type::Item::Defined::Ref::ScalarRef;
-
-    use strict;
-    use warnings;
-
-    use base 'Coat::Type::Item::Defined::Ref';
-
-    sub is_valid {
-        $_[0]->SUPER::is_valid($_[1]) && 
-        ((ref $_[1]) eq 'SCALAR');
-    }
-}
-
-# Types 
-
 package Coat::Types;
 
 use strict;
 use warnings;
+
 use Carp 'confess';
+use base 'Exporter';
+use vars qw(@EXPORT);
 
-my $cache = {};
+use Coat::Meta::TypeConstraint;
 
-sub validate
-{
-    my ($class, $attr, $attribute, $value) = @_;
-    my $isa = $attr->{isa};
+# Moose/Coat keywords
+sub as      ($);
+sub from    ($);
+sub where   (&);
+sub message (&);
+sub type    ($$;$);
+sub subtype ($$;$$);
+sub enum    ($;@);
+sub via     (&);
+sub coerce  ($@);
 
-    my $isa_class = {
-        Any       => 'Coat::Type::Any',
-        Item      => 'Coat::Type::Item',
-        Bool      => 'Coat::Type::Item::Bool',
-        Undef     => 'Coat::Type::Item::Undef',
-        Defined   => 'Coat::Type::Item::Defined',
-        Value     => 'Coat::Type::Item::Defined::Value',
-        Num       => 'Coat::Type::Item::Defined::Value::Num',
-        Int       => 'Coat::Type::Item::Defined::Value::Num::Int',
-        Str       => 'Coat::Type::Item::Defined::Value::Str',
-        ClassName => 'Coat::Type::Item::Defined::Value::Str::ClassName',
-        Ref       => 'Coat::Type::Item::Defined::Ref',
-        ScalarRef => 'Coat::Type::Item::Defined::Ref::ScalarRef',
-        ArrayRef  => 'Coat::Type::Item::Defined::Ref::ArrayRef',
-        HashRef   => 'Coat::Type::Item::Defined::Ref::HashRef',
-        CodeRef   => 'Coat::Type::Item::Defined::Ref::CodeRef',
-        RegexpRef => 'Coat::Type::Item::Defined::Ref::RegexpRef',
-    };
+@EXPORT = qw(
+    type subtype enum coerce
+    from as where via message
+    register_type_constraint
+    find_type_constraint
+);
+
+sub as      ($) { $_[0] }
+sub from    ($) { $_[0] }
+sub where   (&) { $_[0] }
+sub via     (&) { $_[0] }
+sub message (&) { $_[0] }
+
+# {{{ - Registry
+# singleton for storing Coat::Meta::Typeconstrain objects
+
+my $REGISTRY = { };
+
+sub register_type_constraint {
+    my ($tc) = @_;
+
+    confess "can't register an unnamed type constraint"
+        unless defined $tc->name;
+
+    $REGISTRY->{$tc->name} = $tc;
+}
+
+sub find_type_constraint         { $REGISTRY->{$_[0]} }
+sub list_all_type_constraints    { keys %$REGISTRY    }
+sub get_type_constraint_registry { $REGISTRY          }
+
+# }}}
+
+# {{{ - macro (type, subtype, coerce, enum)
+
+sub type($$;$) { 
+    my ($type_name, $validation_code, $message) = @_;
+    
+    register_type_constraint( new Coat::Meta::TypeConstraint(
+        name       => $type_name,
+        validation => $validation_code,
+        message    => $message) );
+}
+
+sub subtype ($$;$$) {
+    my ($type_name, $parent, $validation_code, $message) = @_;
+
+    register_type_constraint( new Coat::Meta::TypeConstraint(
+        name       => $type_name,
+        parent     => $parent,
+        validation => $validation_code,
+        message    => $message ) );
+}
+
+sub enum ($;@) {
+    my ($type_name, @values) = @_;
+    confess "You must have at least two values to enumerate through"
+        unless (scalar @values >= 2);
+
+    my $regexp = join( '|', @values );
+	
+    subtype $type_name 
+        => as 'Str' 
+        => where { /^$regexp$/i };    
+}
+
+sub coerce($@) {
+    my ($type_name, %coercion_map) = @_;
+    my $tc = find_type_constraint($type_name);
+
+    (defined $tc) || 
+        confess "Cannot find type '$type_name', perhaps you forgot to load it.";
+
+    if ($tc->has_coercion) {
+        $tc->coercion_map ( { %{ $tc->coercion_map }, %coercion_map });
+    }
+    else {
+        $tc->coercion_map ( \%coercion_map );
+    }
+}
+
+# }}}
+
+# {{{ - exported functions 
+
+sub export_type_constraints_as_functions {
+    my $caller = caller;
+    foreach my $t ( list_all_type_constraints() ) {
+        my $constraint = find_type_constraint( $t );
+        my $constraint_symbol = "${caller}::${t}";
+        my $constraint_sub = sub {
+            my ($value) = @_;
+            local $_ = $value;
+            return $constraint->validation->($value) ? 1 : undef;
+        };
+        {
+            no strict 'refs';
+            no warnings 'redefine', 'prototype';
+            *$constraint_symbol = $constraint_sub;
+        }
+    }
+}
+
+sub validate {
+    my ($class, $attr, $attribute, $value, $isa) = @_;
+    $isa ||= $attr->{isa};
+    my $tc = find_type_constraint( $isa );
 
     # Exception if not defined and required attribute 
     confess "Attribute \($attribute\) is required and cannot be undef" 
@@ -258,27 +135,105 @@ sub validate
     # Bypass the type check if not defined and not required
     return 1 if (! defined $value && ! $attr->{required});
 
-    # now normal type constraint checks
-    if (exists $isa_class->{$isa}) {
-        my $type = $isa_class->{$isa};
-        $type->is_valid($value) 
-            or confess "Value '"
-                .(defined $value ? $value : 'undef')
-                ."' does not validate type constraint '$isa' "
-                . "for attribute '$attribute'";
+    # look for coercion : if the constraint has coercion and
+    # current value is of a supported coercion source type, coerce.
+    if (defined $tc && $tc->has_coercion) {
+        $value = $tc->coerce($value) 
     }
-    
+
+    # look through the type-constraints
+    if (defined $tc) {
+        $tc->validate( $value ); 
+    }
+
     # unknown type, use it as a classname
     else {
         my $classname = $isa;
-        $isa = $isa_class->{'ClassName'};
-        $isa->is_valid($classname, $value) 
+        my $tc = find_type_constraint( 'ClassName' );
+        
+        $tc->validation->($value, $classname)
             or confess "Value '"
                 . (defined $value ? $value : 'undef')
                 . " is not a member of class '$classname' "
                 . "for attribute '$attribute'";
     }
+
+    return $value;
 }
+
+# pass the value through all types ; return matching types
+sub find_matching_types {
+    my ($value) = @_;
+    my @matching_types;
+
+    local $_ = $value;
+    foreach my $t ( list_all_type_constraints() ){
+        my $tc = find_type_constraint( $t );
+        push @matching_types, $t 
+            if $tc->validation->( $value );
+    }
+
+    return @matching_types;
+}
+
+# }}}
+
+# {{{ - built-in types and subtypes
+
+## --------------------------------------------------------
+## some basic built-in types (mostly taken from Moose)
+## --------------------------------------------------------
+
+type 'Any'  => where { 1 }; # meta-type including all
+type 'Item' => where { 1 }; # base-type 
+
+subtype 'Undef'   => as 'Item' => where { !defined($_) };
+subtype 'Defined' => as 'Item' => where {  defined($_) };
+
+subtype 'Bool'
+    => as 'Item' 
+    => where { !defined($_) || $_ eq "" || "$_" eq '1' || "$_" eq '0' };
+
+subtype 'Value' 
+    => as 'Defined' 
+    => where { !ref($_) };
+    
+subtype 'Ref'
+    => as 'Defined' 
+    => where {  ref($_) };
+
+subtype 'Str' 
+    => as 'Value' 
+    => where { 1 };
+
+subtype 'Num' 
+    => as 'Value' 
+    => where { "$_" =~ /^-?[\d\.]+$/ };
+    
+subtype 'Int' 
+    => as 'Num'   
+    => where { "$_" =~ /^-?[0-9]+$/ };
+
+subtype 'ScalarRef' => as 'Ref' => where { ref($_) eq 'SCALAR' };
+subtype 'ArrayRef'  => as 'Ref' => where { ref($_) eq 'ARRAY'  }; 
+subtype 'HashRef'   => as 'Ref' => where { ref($_) eq 'HASH'   }; 
+subtype 'CodeRef'   => as 'Ref' => where { ref($_) eq 'CODE'   }; 
+subtype 'RegexpRef' => as 'Ref' => where { ref($_) eq 'Regexp' }; 
+subtype 'GlobRef'   => as 'Ref' => where { ref($_) eq 'GLOB'   };
+
+subtype 'FileHandle' 
+    => as 'GlobRef' 
+    => where { ref($_) eq 'GLOB' };
+
+subtype 'Object' 
+    => as 'Ref' 
+    => where { ref($_) && ref($_) ne 'Regexp' };
+
+subtype 'ClassName' 
+    => as 'Str' 
+    => where { ref($_[0]) && ref($_[0]) eq $_[1] };
+
+# }}}
 
 1;
 __END__
@@ -295,7 +250,7 @@ perform type-constraint validation when a value is set to an attribute of the
 class.
 
 The following types are supported by Coat (based on the ones provided by
-L<Moose>)
+L<Moose>, those that are not available in Moose are marked 'C')
 
     Any
     Item
@@ -305,6 +260,7 @@ L<Moose>)
         Value
           Num
             Int
+              Timestamp (C)
           Str
             ClassName
         Ref
@@ -312,6 +268,7 @@ L<Moose>)
           ArrayRef
           HashRef
           CodeRef
+
 
 Each of these types provides a static method called "is_valid" which takes a
 value and returns a boolean telling if the value given is valid according to

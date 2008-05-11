@@ -5,22 +5,10 @@ use strict;
 use warnings;
 use Coat::Meta;
 
+use lib 't';
+
 # classes 
 {
-    package Point;
-
-    use Coat;
-
-    has 'x' => ( isa => 'Int', default => 0);
-    has 'y' => ( isa => 'Int', default => 0);
-
-    package Point3D;
-
-    use Coat;
-    extends 'Point';
-
-    has 'z' => ( isa => 'Int', default => 0);
-
     package Item;
     use Coat;
     has name => (isa => 'Str');
@@ -29,7 +17,6 @@ use Coat::Meta;
     use Coat;
     extends qw(Point3D Item);
 }
-
 
 my $point2d = new Point x => 2, y => 4;
 isa_ok($point2d, 'Point');
