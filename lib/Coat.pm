@@ -14,7 +14,7 @@ use Coat::Meta;
 use Coat::Object;
 use Coat::Types;
 
-$VERSION   = '0.2';
+$VERSION   = '0.210';
 $AUTHORITY = 'cpan:SUKRIA';
 
 # our exported keywords for class description

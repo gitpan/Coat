@@ -137,8 +137,8 @@ sub validate {
 
     # look for coercion : if the constraint has coercion and
     # current value is of a supported coercion source type, coerce.
-    if (defined $tc && $tc->has_coercion) {
-        $value = $tc->coerce($value) 
+    if ($attr->{coerce} && defined $tc && $tc->has_coercion) {
+        $value = $tc->coerce($value);
     }
 
     # look through the type-constraints
@@ -169,8 +169,10 @@ sub find_matching_types {
     local $_ = $value;
     foreach my $t ( list_all_type_constraints() ){
         my $tc = find_type_constraint( $t );
+        eval { 
         push @matching_types, $t 
             if $tc->validation->( $value );
+        };
     }
 
     return @matching_types;
@@ -241,65 +243,219 @@ __END__
 
 =head1 NAME
 
-Coat::Types -- Type constraints handling for Coat
+Coat::Types - Type constraint system for Coat
+
+=head1 NOTE
+
+This is a rewrite of Moose::Util::TypeConstraint for Coat.
+
+=head1 SYNOPSIS
+
+  use Coat::Types;
+
+  type 'Num' => where { Scalar::Util::looks_like_number($_) };
+
+  subtype 'Natural'
+      => as 'Num'
+      => where { $_ > 0 };
+
+  subtype 'NaturalLessThanTen'
+      => as 'Natural'
+      => where { $_ < 10 }
+      => message { "This number ($_) is not less than ten!" };
+
+  coerce 'Num'
+      => from 'Str'
+        => via { 0+$_ };
+
+  enum 'RGBColors' => qw(red green blue);
 
 =head1 DESCRIPTION
 
-Attributes in Coat are bound to types with the keyword 'isa'. This lets Coat
-perform type-constraint validation when a value is set to an attribute of the
-class.
+This module provides Coat with the ability to create custom type
+contraints to be used in attribute definition.
 
-The following types are supported by Coat (based on the ones provided by
-L<Moose>, those that are not available in Moose are marked 'C')
+=head2 Important Caveat
 
-    Any
-    Item
+This is B<NOT> a type system for Perl 5. These are type constraints,
+and they are not used by Coat unless you tell it to. No type
+inference is performed, expression are not typed, etc. etc. etc.
+
+This is simply a means of creating small constraint functions which
+can be used to simplify your own type-checking code, with the added 
+side benefit of making your intentions clearer through self-documentation.
+
+=head2 Slightly Less Important Caveat
+
+It is B<always> a good idea to quote your type and subtype names.
+
+This is to prevent perl from trying to execute the call as an indirect
+object call. This issue only seems to come up when you have a subtype
+the same name as a valid class, but when the issue does arise it tends
+to be quite annoying to debug.
+
+So for instance, this:
+
+  subtype DateTime => as Object => where { $_->isa('DateTime') };
+
+will I<Just Work>, while this:
+
+  use DateTime;
+  subtype DateTime => as Object => where { $_->isa('DateTime') };
+
+will fail silently and cause many headaches. The simple way to solve
+this, as well as future proof your subtypes from classes which have
+yet to have been created yet, is to simply do this:
+
+  use DateTime;
+  subtype 'DateTime' => as 'Object' => where { $_->isa('DateTime') };
+
+=head2 Default Type Constraints
+
+This module also provides a simple hierarchy for Perl 5 types, here is 
+that hierarchy represented visually.
+
+  Any
+  Item
       Bool
       Undef
       Defined
-        Value
-          Num
-            Int
-              Timestamp (C)
-          Str
-            ClassName
-        Ref
-          ScalarRef
-          ArrayRef
-          HashRef
-          CodeRef
+          Value
+              Num
+                Int
+              Str
+                ClassName
+          Ref
+              ScalarRef
+              ArrayRef
+              HashRef
+              CodeRef
+              RegexpRef
+              GlobRef
+              Object
 
+=head2 Type Constraint Naming 
 
-Each of these types provides a static method called "is_valid" which takes a
-value and returns a boolean telling if the value given is valid according to
-the type.
+Since the types created by this module are global, it is suggested 
+that you namespace your types just as you would namespace your 
+modules. So instead of creating a I<Color> type for your B<My::Graphics>
+module, you would call the type I<My::Graphics::Color> instead.
 
-=head1 METHODS
+=head1 FUNCTIONS
 
-=head2 validate
+=head2 Type Constraint Constructors
 
-This module provides a method for validating a value set to an attribute. It
-calls the appropriate "is_valid" method according to the type given.
+The following functions are used to create type constraints.
+They will then register the type constraints in a global store
+where Coat can get to them if it needs to.
 
-If the type given is not a known type, it will be assumed this is a classname,
-and the value will then be checked with ClassName->is_valid.
+See the L<SYNOPSIS> for an example of how to use these.
 
-=head1 SEE ALSO
+=over 4
 
-See L<Coat> for more details.
+=item B<type ($name, $where_clause)>
 
-=head1 AUTHORS
+This creates a base type, which has no parent.
 
-This module was written by Alexis Sukrieh E<lt>sukria+perl@sukria.netE<gt>
+=item B<subtype ($name, $parent, $where_clause, ?$message)>
+
+This creates a named subtype.
+
+=item B<enum ($name, @values)>
+
+This will create a basic subtype for a given set of strings.
+The resulting constraint will be a subtype of C<Str> and
+will match any of the items in C<@values>. It is case sensitive.
+See the L<SYNOPSIS> for a simple example.
+
+B<NOTE:> This is not a true proper enum type, it is simple
+a convient constraint builder.
+
+=item B<as>
+
+This is just sugar for the type constraint construction syntax.
+
+=item B<where>
+
+This is just sugar for the type constraint construction syntax.
+
+=item B<message>
+
+This is just sugar for the type constraint construction syntax.
+
+=back
+
+=head2 Type Coercion Constructors
+
+Type constraints can also contain type coercions as well. If you
+ask your accessor to coerce, then Coat will run the type-coercion
+code first, followed by the type constraint check. This feature
+should be used carefully as it is very powerful and could easily
+take off a limb if you are not careful.
+
+See the L<SYNOPSIS> for an example of how to use these.
+
+=over 4
+
+=item B<coerce>
+
+=item B<from>
+
+This is just sugar for the type coercion construction syntax.
+
+=item B<via>
+
+This is just sugar for the type coercion construction syntax.
+
+=back
+
+=head2 Type Constraint Construction & Locating
+
+=over 4
+
+=item B<find_type_constraint ($type_name)>
+
+This function can be used to locate a specific type constraint
+meta-object, of the class L<Coat::Meta::TypeConstraint> or a
+derivative. What you do with it from there is up to you :)
+
+=item B<register_type_constraint ($type_object)>
+
+This function will register a named type constraint with the type registry.
+
+=item B<list_all_type_constraints>
+
+This will return a list of type constraint names, you can then
+fetch them using C<find_type_constraint ($type_name)> if you
+want to.
+
+=item B<export_type_constraints_as_functions>
+
+This will export all the current type constraints as functions
+into the caller's namespace. Right now, this is mostly used for
+testing, but it might prove useful to others.
+
+=back
+
+=head1 BUGS
+
+All complex software has bugs lurking in it, and this module is no
+exception. If you find a bug please either email me, or add the bug
+to cpan-RT.
+
+=head1 AUTHOR
+
+Alexis Sukrieh E<lt>sukria@sukria.netE<gt> ;
+based on the work done by Stevan Little E<lt>stevan@iinteractive.comE<gt> 
+on Moose::Util::TypeConstraint
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2007 by Alexis Sukrieh.
+Copyright 2006-2008 by Edenware - Alexis Sukrieh
 
-L<http://www.sukria.net/perl/coat/>
+L<http://www.edenware.fr> - L<http://www.sukria.net>
 
 This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself. 
+it under the same terms as Perl itself.
 
 =cut
-

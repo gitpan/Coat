@@ -20,6 +20,7 @@ sub message      { $_[0]->{message}      ||= $_[1] }
 # coerce the given value with the first matching type
 sub coerce {
     my ($self, $value) = @_;
+
     # get the matching types for that value
     my @types = Coat::Types::find_matching_types($value);
 
@@ -57,3 +58,58 @@ sub has_coercion {
 
 1;
 __END__
+=pod
+
+=head1 NAME
+
+Coat:Meta::TypeConstraint - The Coat Type Constraint metaclass
+
+=head1 DESCRIPTION
+
+For the most part, the only time you will ever encounter an
+instance of this class is if you are doing some serious deep
+introspection. This API should not be considered final, but
+it is B<highly unlikely> that this will matter to a regular
+Coat user.
+
+=head1 METHODS
+
+=over 4
+
+=item B<new>
+
+Constructor
+
+=item B<coerce ($value)>
+
+This will apply the type-coercion if applicable.
+
+=item B<validate ($value)>
+
+If the C<$value> passes the constraint, C<undef> will be
+returned. If the C<$value> does B<not> pass the constraint, then
+the C<message> will be used to construct a custom error message.
+
+=item B<has_coercion>
+Return true if coercion has been defined, false otherwise.
+
+=back
+
+=head1 AUTHOR
+
+Alexis Sukrieh E<lt>sukria@sukria.netE<gt> ;
+based on the work done by Stevan Little E<lt>stevan@iinteractive.comE<gt> 
+on Moose::Meta::TypeConstraint
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2006-2008 by Edenware - Alexis Sukrieh
+
+L<http://www.edenware.fr> - L<http://www.sukria.net>
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+
+
+=cut
+
