@@ -161,23 +161,6 @@ sub validate {
     return $value;
 }
 
-# pass the value through all types ; return matching types
-sub find_matching_types {
-    my ($value) = @_;
-    my @matching_types;
-
-    local $_ = $value;
-    foreach my $t ( list_all_type_constraints() ){
-        my $tc = find_type_constraint( $t );
-        eval { 
-        push @matching_types, $t 
-            if $tc->validation->( $value );
-        };
-    }
-
-    return @matching_types;
-}
-
 # }}}
 
 # {{{ - built-in types and subtypes

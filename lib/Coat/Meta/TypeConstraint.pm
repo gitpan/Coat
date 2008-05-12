@@ -21,14 +21,16 @@ sub message      { $_[0]->{message}      ||= $_[1] }
 sub coerce {
     my ($self, $value) = @_;
 
-    # get the matching types for that value
-    my @types = Coat::Types::find_matching_types($value);
-
     # for each source registered, try coercion if the source is a valid type
     local $_ = $value;
     foreach my $source (keys %{ $self->coercion_map }) {
-        (grep /^$source$/, @types) and
+        # if current value passes the current source check, coercing
+        my $tc = Coat::Types::find_type_constraint($source);
+        my $ok;
+        eval { $ok = $tc->validate($value) };
+        if ($ok && !$@) {
             return $self->{coercion_map}{$source}->($value);
+        }
     }
     return $value;
 }

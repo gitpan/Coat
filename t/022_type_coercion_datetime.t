@@ -9,6 +9,7 @@ use Coat::Meta::TypeConstraint;
 subtype 'DateTime'
     => as 'Object'
     => where {$_->isa('DateTime')};
+    
 
 coerce 'DateTime'
     => from 'Str'
@@ -16,10 +17,16 @@ coerce 'DateTime'
             return DateTime->now()
         };
 
+subtype 'UInt'
+    => as 'Int'
+    => where { $_ >= 0}
+    => message { 'Cette valeur ('.$_.') n\'est pas positive'};  
+
 {
     package A;
     use Coat;
     has 'date_time' => (is => 'rw', isa => 'DateTime', coerce => 1);
+    has 'uint'  => (is =>'rw', isa => 'UInt');
 }
 
 
@@ -30,6 +37,9 @@ eval {
     $a->date_time('2008-10-12');
 };
 is($@,'','affectation ok');
-isa_ok( $a->date_time, 'DateTime' );
 
+eval {
+    $a->uint(23);
+};
+is($@,'','affectation ok');
 1;
