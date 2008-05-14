@@ -14,8 +14,8 @@ sub new {
 sub name         { $_[0]->{name}         ||= $_[1] }
 sub validation   { $_[0]->{validation}   ||= $_[1] }
 sub coercion_map { $_[0]->{coercion_map} ||= $_[1] }
-sub parent       { $_[0]->{parent}       ||= $_[1] }
 sub message      { $_[0]->{message}      ||= $_[1] }
+sub parent       { $_[0]->{parent}       ||= $_[1] }
 
 # coerce the given value with the first matching type
 sub coerce {

@@ -14,7 +14,7 @@ use Coat::Meta;
 use Coat::Object;
 use Coat::Types;
 
-$VERSION   = '0.220';
+$VERSION   = '0.300';
 $AUTHORITY = 'cpan:SUKRIA';
 
 # our exported keywords for class description
@@ -110,19 +110,32 @@ sub around {
 sub import {
     my $caller = caller;
     return if $caller eq 'main';
+    my $class_name = getscope();
 
     # import strict and warnings
     strict->import;
     warnings->import;
 
     # delcare the class
-    Coat::Meta->class( getscope() );
+    Coat::Meta->class( $class_name );
 
     # be sure Coat::Object is known as a valid class
     Coat::Meta->class('Coat::Object');
 
+    # the class *cannot* be named like a built-in type!
+    (grep /^$class_name$/, Coat::Types::list_all_builtin_type_constraints) &&
+        confess "Class cannot be named like a built-in type constraint ($class_name)";
+
+    # register the class as a valid type
+    Coat::Types::register_type_constraint( Coat::Meta::TypeConstraint->new(
+        name       => $class_name,
+        parent     => 'Object',
+        validation => sub { ref($_) eq $class_name },
+        message    => sub { "Value is not a member of class '$class_name' ($_)" },
+    ));
+
     # force inheritance from Coat::Object
-    _extends_class( ['Coat::Object'], getscope() );
+    _extends_class( ['Coat::Object'], $class_name );
 
     Coat->export_to_level( 1, @_ );
 }

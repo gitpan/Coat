@@ -23,8 +23,15 @@ sub coerce  ($@);
 @EXPORT = qw(
     type subtype enum coerce
     from as where via message
+    
     register_type_constraint
     find_type_constraint
+    
+    list_all_type_constraints
+    list_all_builtin_type_constraints
+    
+    create_parameterized_type_constraint
+    find_or_create_parameterized_type_constraint
 );
 
 sub as      ($) { $_[0] }
@@ -60,6 +67,7 @@ sub type($$;$) {
     
     register_type_constraint( new Coat::Meta::TypeConstraint(
         name       => $type_name,
+        parent     => undef,
         validation => $validation_code,
         message    => $message) );
 }
@@ -124,9 +132,8 @@ sub export_type_constraints_as_functions {
 }
 
 sub validate {
-    my ($class, $attr, $attribute, $value, $isa) = @_;
-    $isa ||= $attr->{isa};
-    my $tc = find_type_constraint( $isa );
+    my ($class, $attr, $attribute, $value, $type_name) = @_;
+    $type_name ||= $attr->{isa};
 
     # Exception if not defined and required attribute 
     confess "Attribute \($attribute\) is required and cannot be undef" 
@@ -135,30 +142,123 @@ sub validate {
     # Bypass the type check if not defined and not required
     return 1 if (! defined $value && ! $attr->{required});
 
+    # get the current TypeConstraint object
+    my $tc = (_is_parameterized_type_constraint( $type_name )) 
+           ? find_or_create_parameterized_type_constraint( $type_name )
+           : find_type_constraint( $type_name );
+    
+    # anon type if not found & register
+    if (not defined $tc) {
+        $tc = Coat::Meta::TypeConstraint->new(
+            name => $type_name,
+            parent => 'Object',
+            validation => sub { $_->isa( $type_name ) },
+            message => sub { "Value is not a member of class '$type_name'" }
+        );
+        register_type_constraint( $tc );
+    }
+
     # look for coercion : if the constraint has coercion and
     # current value is of a supported coercion source type, coerce.
-    if ($attr->{coerce} && defined $tc && $tc->has_coercion) {
+    if ($attr->{coerce}) {
+        (not $tc->has_coercion) &&
+            confess "Coercion is not available for type '".$tc->name."'";
+        # coercing...
         $value = $tc->coerce($value);
     }
 
-    # look through the type-constraints
-    if (defined $tc) {
-        $tc->validate( $value ); 
-    }
-
-    # unknown type, use it as a classname
-    else {
-        my $classname = $isa;
-        my $tc = find_type_constraint( 'ClassName' );
-        
-        $tc->validation->($value, $classname)
-            or confess "Value '"
-                . (defined $value ? $value : 'undef')
-                . " is not a member of class '$classname' "
-                . "for attribute '$attribute'";
-    }
+    # validate the value through the type-constraint
+    $tc->validate( $value ); 
 
     return $value;
+}
+
+# }}}
+
+# {{{ - parameterized type constraints 
+
+sub find_or_create_parameterized_type_constraint ($) {
+    my ($type_name) = @_;
+    $REGISTRY->{$type_name} ||= create_parameterized_type_constraint( $type_name );
+}
+
+sub create_parameterized_type_constraint ($) {    
+    my ($type_name) = @_;
+    
+    my ($base_type, $type_parameter) = 
+        _parse_parameterized_type_constraint($type_name);
+    
+    (defined $base_type && defined $type_parameter)
+        || confess "Could not parse type name ($type_name) correctly";
+
+    my $tc_base = find_type_constraint( $base_type );
+    (defined $tc_base)
+        || confess "Could not locate the base type ($base_type)";
+    
+    confess "Unsupported base type ($base_type)" 
+        if (! _base_type_is_arrayref($base_type) && 
+            ! _base_type_is_hashref($base_type) );
+
+    my $tc_param = find_type_constraint( $type_parameter );
+
+    my $tc = Coat::Meta::TypeConstraint->new (
+        name           => $type_name,
+        parent         => $base_type,
+        message        => sub { "Validation failed with value $_" });
+
+    # now add parameterized type constraint validation code
+    # depending on the base type
+    if (_base_type_is_arrayref( $base_type )) {
+        $tc->validation( sub { 
+            foreach my $e (@$_) {
+                eval { $tc_param->validate( $e )};
+                return 0 if $@;
+            }
+            return 1;
+        });
+    }
+    elsif (_base_type_is_hashref( $base_type )) {
+        $tc->validation( sub {
+            my $value = $_ || $_[0];
+
+            foreach my $k (keys %$value) {
+                eval { $tc_param->validate( $value->{$k} )};
+                return 0 if $@;
+            }
+            return 1;
+        });
+    }
+
+    # the type-constraint object is ready!
+    return $tc;
+}
+
+# private subs for parameterized type constraints handling
+
+sub _base_type_is_arrayref ($) {
+    my ($type) = @_;
+    return $type =~ /^ArrayRef|ARRAY$/;
+}
+
+sub _base_type_is_hashref ($) {
+    my ($type) = @_;
+    return $type =~ /^HashRef|HASH$/;
+}
+
+sub _parse_parameterized_type_constraint ($) {
+    my ($type_name) = @_;
+
+    if ($type_name =~ /^(\w+)\[(\w+)\]$/) {
+        return ($1, $2);
+    }
+    else { 
+        return (undef, undef);
+    }
+}
+
+sub _is_parameterized_type_constraint ($) {
+    my ($type_name) = @_;
+    return $type_name =~ /^\w+\[\w+\]$/;
 }
 
 # }}}
@@ -212,11 +312,22 @@ subtype 'FileHandle'
 
 subtype 'Object' 
     => as 'Ref' 
-    => where { ref($_) && ref($_) ne 'Regexp' };
+    => where { ref($_) && 
+               ref($_) ne 'Regexp' && 
+               ref($_) ne 'ARRAY' && 
+               ref($_) ne 'SCALAR' && 
+               ref($_) ne 'CODE' && 
+               ref($_) ne 'HASH'};
 
 subtype 'ClassName' 
     => as 'Str' 
     => where { ref($_[0]) && ref($_[0]) eq $_[1] };
+
+# accesor to all the built-in types
+{
+    my @BUILTINS = list_all_type_constraints();
+    sub list_all_builtin_type_constraints { @BUILTINS }
+}
 
 # }}}
 
@@ -310,8 +421,8 @@ that hierarchy represented visually.
                 ClassName
           Ref
               ScalarRef
-              ArrayRef
-              HashRef
+              ArrayRef[`a]
+              HashRef[`a]
               CodeRef
               RegexpRef
               GlobRef
