@@ -9,6 +9,8 @@ use warnings;
 
     has file => (is => 'rw', isa => 'IO::File');
 
+    has many_files => (is => 'rw', isa => 'ArrayRef[IO::File]');
+
 }
 use IO::File;
 
@@ -17,4 +19,10 @@ ok( defined $a, 'defined $a' );
 
 eval { $a->file( A->new ) };
 ok( $@, 'Object A is not an IO::File' );
+
+eval { $a->many_files( A->new ) };
+ok( $@, 'Object A is not an ArrayRef of IO::File' );
+
+eval { $a->many_files( [IO::File->new, IO::File->new] ) };
+is( $@, '', 'ArrayRef of IO::File accepted' );
 

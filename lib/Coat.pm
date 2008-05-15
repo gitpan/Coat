@@ -14,7 +14,7 @@ use Coat::Meta;
 use Coat::Object;
 use Coat::Types;
 
-$VERSION   = '0.300';
+$VERSION   = '0.310';
 $AUTHORITY = 'cpan:SUKRIA';
 
 # our exported keywords for class description
@@ -38,6 +38,17 @@ sub has {
 
     my $class    = $options{'!caller'} || getscope();
     my $accessor = "${class}::${attribute}";
+
+    # handle here attr overloading (eg: has '+foo' overload SUPER::foo)
+    if ($attribute =~ /^\+(\S+)$/) {
+        $attribute = $1;
+        
+        my $inherited_attrs = Coat::Meta->all_attributes( $class );
+        (exists $inherited_attrs->{$attribute}) ||
+            confess "Cannot overload unknown attribute ($attribute)";
+        
+        %options = (%{$inherited_attrs->{$attribute}}, %options );
+    }
 
     my $attr = Coat::Meta->attribute( $class, $attribute, \%options);
 

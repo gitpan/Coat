@@ -143,9 +143,9 @@ sub validate {
     return 1 if (! defined $value && ! $attr->{required});
 
     # get the current TypeConstraint object
-    my $tc = (_is_parameterized_type_constraint( $type_name )) 
-           ? find_or_create_parameterized_type_constraint( $type_name )
-           : find_type_constraint( $type_name );
+    my $tc = (_is_parameterized_type_constraint( $type_name ))
+        ? find_or_create_parameterized_type_constraint( $type_name )
+        : find_type_constraint( $type_name ) ;
     
     # anon type if not found & register
     if (not defined $tc) {
@@ -248,7 +248,7 @@ sub _base_type_is_hashref ($) {
 sub _parse_parameterized_type_constraint ($) {
     my ($type_name) = @_;
 
-    if ($type_name =~ /^(\w+)\[(\w+)\]$/) {
+    if ($type_name =~ /^(\w+)\[([\w:_\d]+)\]$/) {
         return ($1, $2);
     }
     else { 
@@ -258,7 +258,7 @@ sub _parse_parameterized_type_constraint ($) {
 
 sub _is_parameterized_type_constraint ($) {
     my ($type_name) = @_;
-    return $type_name =~ /^\w+\[\w+\]$/;
+    return $type_name =~ /^\w+\[[\w:_\d]+\]$/;
 }
 
 # }}}
