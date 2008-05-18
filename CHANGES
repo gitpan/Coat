@@ -1,3 +1,41 @@
+2008-05-18 -- release 0.320
+    
+    * support for attr overloading (has '+foo')
+    * support for handles (with tests)
+    * fixed BUILD inheritance
+    * added DEMOLISH and BUILD support in Coat::Object
+    * added a dump() method in Coat::Object
+
+2008-05-15 -- release 0.310
+
+    * Fixing parameterized parsing
+
+2008-05-14 -- release 0.300
+
+    * support for anon type constraint
+
+
+2008-05-14 -- release 0.240
+
+    * Bugfix and support for real automatic class constraint
+
+2008-05-14 -- release 0.230
+    
+    * support for parameterized type constraint HashRef[] and ArrayRef[]
+    * removed useless and buggy find_matching_types, fixed ->coerce()
+    * documentation of type-constraints & friends
+
+2008-05-12 -- release 0.210
+
+    * only coerce if attr want coercion
+    * Fixing an issue when Type constraint triggers and exception
+    * extends now try to import missing classes by himself 
+      (closes: #35516).
+
+2008-05-11 -- release 0.200
+
+    * Support for real type constraints and coercion
+
 2007-10-11 -- release 0.1_0.6
 
     * Supports for "required" and "trigger" options

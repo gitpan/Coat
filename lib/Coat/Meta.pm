@@ -128,6 +128,19 @@ sub parents
     { no strict 'refs'; return \@{"${class}::ISA"}; }
 }
 
+sub class_precedence_list {
+    my ($self, $class) = @_;
+    return if !$class;
+
+    ( $class, map { $self->class_precedence_list($_) } @{$self->parents($class)} );
+}
+
+sub linearized_isa {
+    my ($self, $class) = @_;
+    my %seen;
+    grep { !( $seen{$_}++ ) } $self->class_precedence_list($class);
+}
+
 sub is_parent 
 { 
     my ($self, $class, $parent) = @_;

@@ -14,7 +14,7 @@ use Coat::Meta;
 use Coat::Object;
 use Coat::Types;
 
-$VERSION   = '0.310';
+$VERSION   = '0.320';
 $AUTHORITY = 'cpan:SUKRIA';
 
 # our exported keywords for class description
@@ -78,6 +78,26 @@ sub has {
 
     # now bind the subref to the appropriate symbol in the caller class
     _bind_coderef_to_symbol( $accessor_code, $accessor );
+
+    my $handles = $attr->{'handles'};
+    if ($handles && ref $handles eq 'HASH') {
+
+        foreach my $method ( keys %{$handles} ) {
+            my $handler = "${class}::${method}";
+            my $handle = $handles->{$method};
+            my $handles_code = sub {
+                my ( $self, @args ) = @_;
+
+                if ( $self->$attribute->can( $handle ) ) {
+                    return $self->$attribute->$handle( @args );
+                }
+                else {
+                    confess( 'Cannot call ' . $handle . ' from ' . $attribute );
+                }
+            };
+            _bind_coderef_to_symbol( $handles_code, $handler );
+        }
+    }
 }
 
 # the public inheritance method, takes a list of class we should inherit from

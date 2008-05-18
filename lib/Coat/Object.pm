@@ -31,7 +31,6 @@ sub meta {
 sub init {
     my ( $self, %attrs ) = @_;
     my $class_attr = Coat::Meta->all_attributes( ref( $self ) );
-
     
     # setting all default values
     foreach my $attr ( keys %{$class_attr} ) {
@@ -69,11 +68,49 @@ sub init {
         $class_attr->{$attr}{'is'} = $is;
     }
 
+    $self->BUILDALL(\%attrs);
+    return $self;
+}
 
-    # try to run the BUILD method, if exists
+# All the BUILD/DEMOLISH stuff here is taken from Moose and 
+# uses some Coat::Meta.
+
+sub BUILDALL {
+    return unless $_[0]->can('BUILD');
+    my ($self, $params) = @_;
+
     my $build_sub;
-    { no strict 'refs'; $build_sub = *{ref($self)."::BUILD"}; }
-    $self->BUILD( %attrs ) if ( defined &$build_sub );
+    foreach my $pkg (reverse Coat::Meta->linearized_isa(ref($self))) {
+        { 
+            no strict 'refs'; 
+            $build_sub = *{$pkg."::BUILD"}; 
+        }
+        $self->$build_sub( %$params ) if defined &$build_sub;
+    }
+}
+
+sub DEMOLISHALL {
+    return unless $_[0]->can('DEMOLISH');
+    my ($self) = @_;
+ 
+    my $demolish_sub;
+    foreach my $pkg (reverse Coat::Meta->linearized_isa(ref($self))) {
+        { 
+            no strict 'refs'; 
+            $demolish_sub = *{$pkg."::DEMOLISH"}; 
+        }
+        $self->$demolish_sub() if defined &$demolish_sub;
+    }
+}
+
+sub DESTROY { goto &DEMOLISHALL }
+
+# taken from Moose::Object
+sub dump { 
+    my $self = shift;
+    require Data::Dumper;
+    local $Data::Dumper::Maxdepth = shift if @_;
+    Data::Dumper::Dumper $self;
 }
 
 # end Coat::Object
