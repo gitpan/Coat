@@ -14,7 +14,7 @@ use Coat::Meta;
 use Coat::Object;
 use Coat::Types;
 
-$VERSION   = '0.320';
+$VERSION   = '0.330';
 $AUTHORITY = 'cpan:SUKRIA';
 
 # our exported keywords for class description
@@ -33,53 +33,31 @@ sub _build_sub_with_hook($$);
 
 # has() declares an attribute and builds the corresponding accessors
 sub has {
-    my ( $attribute, %options ) = @_;
-    confess "Attribute is a reference, cannot declare" if ref($attribute);
+    my ( $attr_name, %options ) = @_;
+    confess "Attribute is a reference, cannot declare" if ref($attr_name);
 
     my $class    = $options{'!caller'} || getscope();
-    my $accessor = "${class}::${attribute}";
+    my $accessor = "${class}::${attr_name}";
 
     # handle here attr overloading (eg: has '+foo' overload SUPER::foo)
-    if ($attribute =~ /^\+(\S+)$/) {
-        $attribute = $1;
+    if ($attr_name =~ /^\+(\S+)$/) {
+        $attr_name = $1;
         
         my $inherited_attrs = Coat::Meta->all_attributes( $class );
-        (exists $inherited_attrs->{$attribute}) ||
-            confess "Cannot overload unknown attribute ($attribute)";
+        (exists $inherited_attrs->{$attr_name}) ||
+            confess "Cannot overload unknown attribute ($attr_name)";
         
-        %options = (%{$inherited_attrs->{$attribute}}, %options );
+        %options = (%{$inherited_attrs->{$attr_name}}, %options );
     }
 
-    my $attr = Coat::Meta->attribute( $class, $attribute, \%options);
+    my $attr_meta = Coat::Meta->attribute( $class, $attr_name, \%options);
 
-    my $accessor_code = sub {
-        my ( $self, $value ) = @_;
-        
-        # want a set()
-        if ( @_ > 1 ) {
-            confess "Cannot set a read-only attribute ($attribute)" 
-                if ($attr->{'is'} eq 'ro');
-
-            $value = Coat::Types->validate( $attr, $attribute, $value );
-            $self->{$attribute} = $value;
-
-            # handle the trigger, if exists
-            $attr->{'trigger'}->($self, $value) 
-                if defined $attr->{'trigger'};
-            
-            return $value;
-        }
-
-        # want a get()
-        else {
-            return $self->{$attribute};
-        }
-    };
+    my $accessor_code = _accessor_for_attr($attr_name, $attr_meta);
 
     # now bind the subref to the appropriate symbol in the caller class
     _bind_coderef_to_symbol( $accessor_code, $accessor );
 
-    my $handles = $attr->{'handles'};
+    my $handles = $attr_meta->{'handles'};
     if ($handles && ref $handles eq 'HASH') {
 
         foreach my $method ( keys %{$handles} ) {
@@ -88,15 +66,29 @@ sub has {
             my $handles_code = sub {
                 my ( $self, @args ) = @_;
 
-                if ( $self->$attribute->can( $handle ) ) {
-                    return $self->$attribute->$handle( @args );
+                if ( $self->$attr_name->can( $handle ) ) {
+                    return $self->$attr_name->$handle( @args );
                 }
                 else {
-                    confess( 'Cannot call ' . $handle . ' from ' . $attribute );
+                    confess( 'Cannot call ' . $handle . ' from ' . $attr_name );
                 }
             };
             _bind_coderef_to_symbol( $handles_code, $handler );
         }
+    }
+
+    my $predicate = $attr_meta->{'predicate'};
+    if ($predicate) {
+        my $full = "${class}::$predicate";
+        my $predicate_code = sub { exists $_[0]->{$attr_name} };
+        _bind_coderef_to_symbol( $predicate_code => $full );
+    }
+
+    my $clearer = $attr_meta->{'clearer'};
+    if ($clearer) {
+        my $full = "${class}::$clearer";
+        my $clearer_code = sub { delete $_[0]->{$attr_name} };
+        _bind_coderef_to_symbol( $clearer_code => $full );
     }
 }
 
@@ -158,12 +150,7 @@ sub import {
         confess "Class cannot be named like a built-in type constraint ($class_name)";
 
     # register the class as a valid type
-    Coat::Types::register_type_constraint( Coat::Meta::TypeConstraint->new(
-        name       => $class_name,
-        parent     => 'Object',
-        validation => sub { ref($_) eq $class_name },
-        message    => sub { "Value is not a member of class '$class_name' ($_)" },
-    ));
+    Coat::Types::find_or_create_type_constraint( $class_name );
 
     # force inheritance from Coat::Object
     _extends_class( ['Coat::Object'], $class_name );
@@ -216,6 +203,40 @@ sub getscope {
 ##############################################################################
 # Private methods
 ##############################################################################
+
+
+# TODO : Should find a way to build optimized non-mutable accessors here
+# It's ugly to check the meta of the attribute whenver using the setter or the
+# getter.
+sub _accessor_for_attr($$) {
+    my ($name, $meta) = @_;
+
+    return sub {
+        my ( $self, $value ) = @_;
+        
+        # setter
+        if ( @_ > 1 ) {
+            confess "Cannot set a read-only attribute ($name)" 
+                if ($meta->{'is'} eq 'ro');
+
+            $value = Coat::Types->validate( $meta, $name, $value );
+            $self->{$name} = $value;
+
+            $meta->{'trigger'}->($self, $value) 
+                if defined $meta->{'trigger'};
+            
+            return $value;
+        }
+
+        # getter
+        else {
+            $self->{$name} = Coat::Meta->attr_default( $self, $name)
+                if ($meta->{lazy} && !defined($self->{$name}));
+                
+            return $self->{$name};
+        }
+    };
+}
 
 # The idea here is to loop on each coderef given
 # and build subs to ensure the orig coderef is correctly propagated.

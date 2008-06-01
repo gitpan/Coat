@@ -26,6 +26,7 @@ sub coerce  ($@);
     
     register_type_constraint
     find_type_constraint
+    find_or_create_type_constraint
     
     list_all_type_constraints
     list_all_builtin_type_constraints
@@ -57,6 +58,20 @@ sub register_type_constraint {
 sub find_type_constraint         { $REGISTRY->{$_[0]} }
 sub list_all_type_constraints    { keys %$REGISTRY    }
 sub get_type_constraint_registry { $REGISTRY          }
+
+sub find_or_create_type_constraint {
+    my ($type_name) = @_;
+    
+    my $tc = find_type_constraint( $type_name );
+    return $tc if defined $tc;
+
+    return register_type_constraint( Coat::Meta::TypeConstraint->new(
+        name       => $type_name,
+        parent     => 'Object',
+        validation => sub { ref($_) eq $type_name},
+        message    => sub { "Value is not a member of class '$type_name' ($_)" },
+    ));
+}
 
 # }}}
 
@@ -96,10 +111,7 @@ sub enum ($;@) {
 
 sub coerce($@) {
     my ($type_name, %coercion_map) = @_;
-    my $tc = find_type_constraint($type_name);
-
-    (defined $tc) || 
-        confess "Cannot find type '$type_name', perhaps you forgot to load it.";
+    my $tc = find_or_create_type_constraint($type_name);
 
     if ($tc->has_coercion) {
         $tc->coercion_map ( { %{ $tc->coercion_map }, %coercion_map });

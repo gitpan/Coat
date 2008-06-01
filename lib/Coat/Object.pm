@@ -30,32 +30,37 @@ sub meta {
 # given at instanciation time
 sub init {
     my ( $self, %attrs ) = @_;
-    my $class_attr = Coat::Meta->all_attributes( ref( $self ) );
+    my $class = ref $self;
+
+    my $class_attr = Coat::Meta->all_attributes( $class );
     
     # setting all default values
     foreach my $attr ( keys %{$class_attr} ) {
-        # handling default values
-        if ( defined $class_attr->{$attr}{'default'} ) {
+        my $meta = $class_attr->{$attr};
+
+        confess "You cannot have lazy attribute ($attr) without specifying a default value for it" 
+            if ($meta->{lazy} && !exists($meta->{default}));
+
+        # handling default values for non-lazy slots
+        if ( (! $meta->{'lazy'}) && defined $meta->{'default'} ) {
+
             # saving original permission and setting it to read/write
-            my $is = $class_attr->{$attr}{'is'};
-            $class_attr->{$attr}{'is'} = 'rw';
+            my $is = $meta->{'is'};
+            $meta->{'is'} = 'rw';
             
-            # setting the default value
-            my $default = $class_attr->{$attr}{'default'};
-            ref $default
-              ? $self->$attr( &$default(@_) ) # we have a CODE ref
-              : $self->$attr( $default );     # we have a plain scalar
-    
+            # set default value
+            $self->$attr( Coat::Meta->attr_default( $self, $attr) ); 
+
             # restoring original permissions
-            $class_attr->{$attr}{'is'} = $is;
+            $meta->{'is'} = $is;
         }
          
         # a required read-only field must have a default value or be set at
         # instanciation time
         confess "Attribute ($attr) is required"
-            if ($class_attr->{$attr}{'required'} &&
-                $class_attr->{$attr}{'is'} eq 'ro' &&
-                (! defined $class_attr->{$attr}{'default'}) && 
+            if ($meta->{'required'} &&
+                $meta->{'is'} eq 'ro' &&
+                (! defined $meta->{'default'}) && 
                 (! exists $attrs{$attr}));
     }
 

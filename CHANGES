@@ -1,3 +1,8 @@
+2008-06-01 -- release 0.330
+
+    * Possible to coerce from an external class
+    * support for lazy attributes
+
 2008-05-18 -- release 0.320
     
     * support for attr overloading (has '+foo')

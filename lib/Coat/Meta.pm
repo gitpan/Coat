@@ -76,6 +76,21 @@ sub exists
     return exists $CLASSES->{ $class };
 }
 
+# returns the default value for the given $class/$attr
+sub attr_default($$) {
+    my( $self, $obj, $attr) = @_;
+    my $class = ref $obj;
+
+    my $meta = Coat::Meta->has( $class, $attr );
+
+    my $default = $meta->{'default'};
+    return undef unless defined $default;
+
+    return (ref $default)
+        ? $default->($obj)  # we have a CODE ref
+        : $default;     # we have a plain scalar
+}
+
 # this method looks for the attribute description in the whole hierarchy 
 # of the class, starting by the lowest leaf.
 # returns the description or undef if not found.
