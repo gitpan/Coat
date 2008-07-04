@@ -35,11 +35,6 @@ ok($a->has_id, "we have a value again..");
 $a->id(undef);
 ok($a->has_id, "setting to undef means we still have a value");
 
-TODO: {
-    local $TODO = "uhh what?";
-    is($a->id, undef, "value is undef");
-};
-
 $a->clear_id;
 ok(!$a->has_id, "clearing from undef still makes predicate false");
 is($a->id, undef, "value is still undef");

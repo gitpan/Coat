@@ -6,40 +6,30 @@ use DateTime;
 use Coat::Types;
 use Coat::Meta::TypeConstraint;
 
-subtype 'DateTime'
+BEGIN { use_ok 'IO::File' }
+
+subtype 'IO::File'
     => as 'Object'
-    => where {$_->isa('DateTime')};
+    => where {$_->isa('IO::File')};
     
 
-coerce 'DateTime'
+coerce 'IO::File'
     => from 'Str'
-        => via {
-            return DateTime->now()
-        };
-
-subtype 'UInt'
-    => as 'Int'
-    => where { $_ >= 0}
-    => message { 'Cette valeur ('.$_.') n\'est pas positive'};  
+    => via {
+        IO::File->new
+    };
 
 {
     package A;
     use Coat;
-    has 'date_time' => (is => 'rw', isa => 'DateTime', coerce => 1);
-    has 'uint'  => (is =>'rw', isa => 'UInt');
+    has 'file' => (is => 'rw', isa => 'IO::File', coerce => 1);
 }
 
 
-my $dt = DateTime->now();
-
 my $a = A->new();
 eval {
-    $a->date_time('2008-10-12');
+    $a->file('foo.file');
 };
-is($@,'','affectation ok');
+is($@,'','coercion succeeded');
 
-eval {
-    $a->uint(23);
-};
-is($@,'','affectation ok');
-1;
+ok($a->file->isa('IO::File'), 'file is a IO::File object');

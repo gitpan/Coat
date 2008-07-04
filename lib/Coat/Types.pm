@@ -152,7 +152,7 @@ sub validate {
         if ($attr->{required} && ! defined $value);
 
     # Bypass the type check if not defined and not required
-    return 1 if (! defined $value && ! $attr->{required});
+    return $value if (! defined $value && ! $attr->{required});
 
     # get the current TypeConstraint object
     my $tc = (_is_parameterized_type_constraint( $type_name ))
