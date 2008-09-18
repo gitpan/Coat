@@ -1,3 +1,8 @@
+2008-09-18 -- release 0.332
+
+    * bugfix: removed useless DateTime dependency in test suite, so Coat can be
+      built without this module installed.
+
 2008-07-04 -- release 0.331
 
     * bugfix: don't set undef values to 1 during type validation)
