@@ -11,7 +11,10 @@ my $CLASSES = {};
 # the root accessor: returns the whole data structure, all meta classes
 sub classes { $CLASSES }
 
+# returns all attributes for the given class
 sub attributes { $CLASSES->{ $_[1] } }
+
+# returns the meta-data for the given class
 sub class
 { 
     my ($self, $class) = @_;
@@ -99,7 +102,6 @@ sub has($$$)
 { 
     my ($self, $class, $attribute) = @_;
 
-
     # if the attribute is declared for us, it's ok
     return $CLASSES->{ $class }{ $attribute } if 
         exists $CLASSES->{ $class }{ $attribute };
@@ -164,7 +166,17 @@ sub is_parent
 
 sub family { $CLASSES->{'@!family'}{ $_[1] } }
 
-sub extends 
+sub add_to_family {
+    my ($self, $class, $parent) = @_;
+    
+    # add the parent to the family if not already present
+    if (not grep /^$parent$/, @{$CLASSES->{'@!family'}{ $class }}) {
+        push @{ $CLASSES->{'@!family'}{ $class } }, $parent; 
+    }
+}
+
+sub extends($$$);
+sub extends($$$)
 { 
     my ($self, $class, $parents) = @_;
     $parents = [$parents] unless ref $parents;
@@ -174,21 +186,15 @@ sub extends
         $CLASSES->{'@!family'}{ $class } = [];
      }
     
-
+    # loop on each parent, add it to family and do the same 
+    # with recursion through its family
     foreach my $parent (@$parents) {
-        # make sure we don't inherit twice
-        confess "Class '$class' already inherits from class '$parent'" if 
-            Coat::Meta->is_family( $class, $parent );
-        
         foreach my $ancestor (@{ Coat::Meta->parents( $parent ) }) {
-            push @{ $CLASSES->{'@!family'}{ $class } }, $ancestor 
-                unless grep /^$ancestor$/, 
-                            @{$CLASSES->{'@!family'}{ $class }};
+            Coat::Meta->extends($class, $ancestor);
         }
-        
-        push @{ $CLASSES->{'@!family'}{ $class } }, $parent;
+        # we do it at the end, so we respect the order of ancestry
+        Coat::Meta->add_to_family($class, $parent);
     }
-
 }
 
 sub modifiers

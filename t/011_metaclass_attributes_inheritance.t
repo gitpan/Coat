@@ -47,8 +47,10 @@ is_deeply(Coat::Meta->family( 'Foo' ), \@foo_family,
     qq/Foo's family is correct/);
 is_deeply(Coat::Meta->family( 'Bar' ), \@bar_family,
     qq/Bar's family is correct/);
+
 is_deeply(Coat::Meta->family( 'Baz' ), \@baz_family,
     qq/Baz's family is correct/);
+
 is_deeply(Coat::Meta->family( 'BalBaz' ), \@balbaz_family,
     qq/BalBaz's family is correct/);
 

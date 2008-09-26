@@ -68,7 +68,7 @@ sub find_or_create_type_constraint {
     return register_type_constraint( Coat::Meta::TypeConstraint->new(
         name       => $type_name,
         parent     => 'Object',
-        validation => sub { ref($_) eq $type_name},
+        validation => sub { $_->isa($type_name) },
         message    => sub { "Value is not a member of class '$type_name' ($_)" },
     ));
 }
@@ -114,7 +114,8 @@ sub coerce($@) {
     my $tc = find_or_create_type_constraint($type_name);
 
     if ($tc->has_coercion) {
-        $tc->coercion_map ( { %{ $tc->coercion_map }, %coercion_map });
+        my $map = { %{ $tc->coercion_map }, %coercion_map };
+        $tc->coercion_map ( $map );
     }
     else {
         $tc->coercion_map ( \%coercion_map );
@@ -154,22 +155,11 @@ sub validate {
     # Bypass the type check if not defined and not required
     return $value if (! defined $value && ! $attr->{required});
 
-    # get the current TypeConstraint object
+    # get the current TypeConstraint object (or create it if not defined)
     my $tc = (_is_parameterized_type_constraint( $type_name ))
         ? find_or_create_parameterized_type_constraint( $type_name )
-        : find_type_constraint( $type_name ) ;
+        : find_or_create_type_constraint( $type_name ) ;
     
-    # anon type if not found & register
-    if (not defined $tc) {
-        $tc = Coat::Meta::TypeConstraint->new(
-            name => $type_name,
-            parent => 'Object',
-            validation => sub { $_->isa( $type_name ) },
-            message => sub { "Value is not a member of class '$type_name'" }
-        );
-        register_type_constraint( $tc );
-    }
-
     # look for coercion : if the constraint has coercion and
     # current value is of a supported coercion source type, coerce.
     if ($attr->{coerce}) {

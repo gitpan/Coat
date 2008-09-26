@@ -13,9 +13,18 @@ sub new {
 # accessors
 sub name         { $_[0]->{name}         ||= $_[1] }
 sub validation   { $_[0]->{validation}   ||= $_[1] }
-sub coercion_map { $_[0]->{coercion_map} ||= $_[1] }
 sub message      { $_[0]->{message}      ||= $_[1] }
 sub parent       { $_[0]->{parent}       ||= $_[1] }
+
+sub coercion_map { 
+    my ($self, $map) = @_;
+    if (@_ == 1) {
+        return $self->{coercion_map};
+    }
+    else {
+        return $self->{coercion_map} = $map; 
+    }
+}
 
 # coerce the given value with the first matching type
 sub coerce {
@@ -27,7 +36,9 @@ sub coerce {
         # if current value passes the current source check, coercing
         my $tc = Coat::Types::find_type_constraint($source);
         my $ok;
-        eval { $ok = $tc->validate($value) };
+        eval { 
+            $ok = $tc->validate($value) 
+        };
         if ($ok && !$@) {
             return $self->{coercion_map}{$source}->($value);
         }

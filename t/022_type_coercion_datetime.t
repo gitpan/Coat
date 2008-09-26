@@ -15,7 +15,7 @@ subtype 'IO::File'
 coerce 'IO::File'
     => from 'Str'
     => via {
-        IO::File->new
+        IO::File->new()
     };
 
 {
