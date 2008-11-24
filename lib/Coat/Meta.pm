@@ -12,7 +12,7 @@ my $CLASSES = {};
 sub classes { $CLASSES }
 
 # returns all attributes for the given class
-sub attributes { $CLASSES->{ $_[1] } }
+sub attributes { $CLASSES->{ $_[1] } || {} }
 
 # returns the meta-data for the given class
 sub class
@@ -164,7 +164,10 @@ sub is_parent
     return grep /^$parent$/, @{ Coat::Meta->parents( $class ) };
 }
 
-sub family { $CLASSES->{'@!family'}{ $_[1] } }
+sub family { 
+    my ($self, $class) = @_;
+    $CLASSES->{'@!family'}{ $class } ||= Coat::Meta->parents( $class );
+}
 
 sub add_to_family {
     my ($self, $class, $parent) = @_;

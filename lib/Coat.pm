@@ -14,7 +14,7 @@ use Coat::Meta;
 use Coat::Object;
 use Coat::Types;
 
-$VERSION   = '0.332';
+$VERSION   = '0.334';
 $AUTHORITY = 'cpan:SUKRIA';
 
 # our exported keywords for class description
@@ -51,8 +51,7 @@ sub has {
     }
 
     my $attr_meta = Coat::Meta->attribute( $class, $attr_name, \%options);
-
-    my $accessor_code = _accessor_for_attr($attr_name, $attr_meta);
+    my $accessor_code = _accessor_for_attr($attr_name);
 
     # now bind the subref to the appropriate symbol in the caller class
     _bind_coderef_to_symbol( $accessor_code, $accessor );
@@ -206,14 +205,15 @@ sub getscope {
 
 
 # TODO : Should find a way to build optimized non-mutable accessors here
-# It's ugly to check the meta of the attribute whenver using the setter or the
+# It's ugly to get and check the meta of the attribute whenver using the setter or the
 # getter.
-sub _accessor_for_attr($$) {
-    my ($name, $meta) = @_;
+sub _accessor_for_attr {
+    my ($name) = @_;
 
     return sub {
         my ( $self, $value ) = @_;
-        
+        my $meta = Coat::Meta->has( ref($self), $name );
+
         # setter
         if ( @_ > 1 ) {
             confess "Cannot set a read-only attribute ($name)" 
@@ -327,7 +327,7 @@ sub _extends_class($;$) {
         # class is unknown, never been loaded, let's try to import it
         unless ( Coat::Meta->exists($mother) ) {
             eval "use $mother";
-            confess "Failed to load class '$mother' : $@" if $@;
+            confess "Could not load class ($mother) because : $@" if $@;
             $mother->import;
         }
         Coat::Meta->extends( $class, $mother );

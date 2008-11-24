@@ -10,14 +10,59 @@ use Carp 'confess';
 
 # The default constructor
 sub new {
-    my ( $class, %args ) = @_;
+    my ( $class, @args ) = @_;
 
+    # create the newborn
     my $self = {};
     bless $self, $class;
 
-    $self->init(%args);
+    # parse and prepare the args
+    my $args = $self->build_args(@args);
 
+    # init the object
+    $self->init($args);
+
+    # done
     return $self;
+}
+
+sub build_args {
+    my ($self, @args) = @_;
+    my $class = ref($self);
+
+    my $args;
+    $args = {@args} if @args % 2 == 0;
+
+    # if BUILDARGS exists, look or it and run it
+    if ($self->can('BUILDARGS')) {
+        foreach my $pkg (reverse Coat::Meta->linearized_isa($class)) {
+            my $buildargs_sub;
+            { 
+                no strict 'refs'; 
+                $buildargs_sub = *{$pkg."::BUILDARGS"}; 
+            }
+            if (defined &$buildargs_sub) {
+                $args = $self->$buildargs_sub(@args);
+                last;
+            }
+        }
+    }
+
+    # now check everything is OK with the args
+    unless (defined $args) {
+        if (@args == 1) {
+            if (ref($args[0]) ne 'HASHREF') {
+                confess "Single argument must be an HASHREF";
+            }
+            else {
+                $args = $args[0];
+            }
+        }
+        else {
+            confess "Invalid arguments";
+        }
+    }
+    return $args;
 }
 
 # returns the meta-class description of that instance
@@ -29,7 +74,7 @@ sub meta {
 # init an instance : put default values and set values
 # given at instanciation time
 sub init {
-    my ( $self, %attrs ) = @_;
+    my ( $self, $attrs ) = @_;
     my $class = ref $self;
 
     my $class_attr = Coat::Meta->all_attributes( $class );
@@ -60,53 +105,46 @@ sub init {
         confess "Attribute ($attr) is required"
             if ($meta->{'required'} &&
                 $meta->{'is'} eq 'ro' &&
-                (! defined $meta->{'default'}) && 
-                (! exists $attrs{$attr}));
+                (! exists $meta->{'default'}) && 
+                (! exists $attrs->{$attr}));
     }
 
     # setting values given at instanciation time
-    foreach my $attr ( keys %attrs ) {
+    foreach my $attr ( keys %$attrs ) {
         my $is = $class_attr->{$attr}{'is'};
         
         $class_attr->{$attr}{'is'} = 'rw';
-        $self->$attr( $attrs{$attr} );
+        $self->$attr( $attrs->{$attr} );
         $class_attr->{$attr}{'is'} = $is;
     }
 
-    $self->BUILDALL(\%attrs);
+    $self->BUILDALL($attrs);
     return $self;
 }
 
-# All the BUILD/DEMOLISH stuff here is taken from Moose and 
-# uses some Coat::Meta.
+# This is done to let us implement easily the BUILDARGS/BUILD/DEMOLISH stuff 
+# It must behave the same: with inheritance in mind.
+# Thanks again to the Moose team for the idea of *ALL() methods.
 
-sub BUILDALL {
-    return unless $_[0]->can('BUILD');
-    my ($self, $params) = @_;
+sub _run_for_all {
+    my ($method_name, $self, $params) = @_;
+    my $class = ref($self);
 
-    my $build_sub;
-    foreach my $pkg (reverse Coat::Meta->linearized_isa(ref($self))) {
+    return unless $self->can($method_name);
+
+    my $sub;
+    foreach my $pkg (reverse Coat::Meta->linearized_isa($class)) {
         { 
             no strict 'refs'; 
-            $build_sub = *{$pkg."::BUILD"}; 
+            $sub = *{$pkg."::${method_name}"}; 
         }
-        $self->$build_sub( %$params ) if defined &$build_sub;
+        $self->$sub( %$params ) if defined &$sub;
     }
 }
 
-sub DEMOLISHALL {
-    return unless $_[0]->can('DEMOLISH');
-    my ($self) = @_;
- 
-    my $demolish_sub;
-    foreach my $pkg (reverse Coat::Meta->linearized_isa(ref($self))) {
-        { 
-            no strict 'refs'; 
-            $demolish_sub = *{$pkg."::DEMOLISH"}; 
-        }
-        $self->$demolish_sub() if defined &$demolish_sub;
-    }
-}
+sub BUILDALL { _run_for_all('BUILD', @_) }
+
+sub DEMOLISHALL { _run_for_all('DEMOLISH', @_) }
 
 sub DESTROY { goto &DEMOLISHALL }
 
