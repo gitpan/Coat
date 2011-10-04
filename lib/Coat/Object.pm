@@ -26,6 +26,13 @@ sub new {
     return $self;
 }
 
+sub make_clone { 
+    my ($self) = @_;
+    my $class = ref($self);
+    my $clone = $class->new(%$self);
+    return $clone;
+}
+
 sub build_args {
     my ($self, @args) = @_;
     my $class = ref($self);
@@ -122,6 +129,31 @@ sub init {
     return $self;
 }
 
+sub BUILDALL { _run_for_all('BUILD', @_) }
+
+sub DEMOLISHALL { _run_for_all('DEMOLISH', @_) }
+
+sub DESTROY { goto &DEMOLISHALL }
+
+# taken from Moose::Object
+sub dump { 
+    my $self = shift;
+    require Data::Dumper;
+    local $Data::Dumper::Maxdepth = shift if @_;
+    Data::Dumper::Dumper $self;
+}
+
+# returns a new object whose attribute values are
+# equal to those of self
+sub clone {
+    my ($self) = @_;
+    eval "use Clone";
+    confess "Module Clone is needed for cloning object: $@" if ($@);
+    return Clone::clone($self);
+}
+
+# private
+
 # This is done to let us implement easily the BUILDARGS/BUILD/DEMOLISH stuff 
 # It must behave the same: with inheritance in mind.
 # Thanks again to the Moose team for the idea of *ALL() methods.
@@ -142,19 +174,7 @@ sub _run_for_all {
     }
 }
 
-sub BUILDALL { _run_for_all('BUILD', @_) }
 
-sub DEMOLISHALL { _run_for_all('DEMOLISH', @_) }
-
-sub DESTROY { goto &DEMOLISHALL }
-
-# taken from Moose::Object
-sub dump { 
-    my $self = shift;
-    require Data::Dumper;
-    local $Data::Dumper::Maxdepth = shift if @_;
-    Data::Dumper::Dumper $self;
-}
 
 # end Coat::Object
 1;
