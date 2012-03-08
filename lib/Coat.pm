@@ -14,19 +14,11 @@ use Coat::Meta;
 use Coat::Object;
 use Coat::Types;
 
-$VERSION   = '0.501';
+$VERSION   = '0.502';
 $AUTHORITY = 'cpan:SUKRIA';
 
 # our exported keywords for class description
-@EXPORT = qw(
-    after 
-    alias
-    around
-    before 
-    extends 
-    has 
-    with 
-);
+@EXPORT = qw(has extends before after around);
 
 # Prototypes for private methods
 sub _bind_coderef_to_symbol($$);
@@ -38,19 +30,6 @@ sub _build_sub_with_hook($$);
 ##############################################################################
 # Public static methods
 ##############################################################################
-
-sub alias { 
-    my ($name, $method) = @_;
-    my $caller = caller;
-    { 
-        no strict 'refs';
-        my $orig = *{"${caller}::${method}"};
-        if (not defined &$orig) {
-            confess "cannot alias undefined method \"$method\"";
-        }
-        *{"${caller}::${name}"} = *{"${caller}::${method}"};
-    }
-}
 
 # has() declares an attribute and builds the corresponding accessors
 sub has {
@@ -120,23 +99,6 @@ sub extends {
     _extends_class( \@mothers, getscope() );
 }
 
-sub with {
-    my (@roles) = @_;
-    my $caller   = caller;
-    my @methods  = Coat::Meta::_list_all_package_symbols($caller, 'CODE');
-
-    foreach my $role (@roles) {
-        my @requires = Coat::Meta->role_get_required_methods($role);
-        foreach my $required (@requires) {
-            confess ("Methods "
-                  . join(", ", @requires)
-                  . " are required by the role $role")
-                unless grep(/^$required$/, @methods);
-        }
-        Coat::Meta->compose_class_with_role($caller => $role);
-    }
-}
-
 # the before hook catches the call to an inherited method and exectue
 # the code given before the inherited method is called.
 sub before {
@@ -169,7 +131,7 @@ sub around {
 # modes to children and also to force the Coat::Object inheritance.
 sub import {
     my $caller = caller;
-    return if $caller eq 'main' or $caller eq 'Coat::Role';
+    return if $caller eq 'main';
     my $class_name = getscope();
 
     # import strict and warnings
@@ -308,7 +270,6 @@ sub _build_sub_with_hook($$) {
         my $coderef;
         { 
             no strict 'refs'; 
-            no warnings;
             $coderef = *{ "${parent_class}::${method}" };
         }
         $super = $parent_class if defined &$coderef;
@@ -525,24 +486,6 @@ updated value and the attribute meta-object (this is for more advanced fiddling
 and can typically be ignored). You B<cannot> have a trigger on a read-only
 attribute.
 
-=back
-
-=head2 ALIASES
-
-You can alias any method of a class with the keyword I<alias>, like in the
-following example:
-
-    package Foo;
-    use Coat;
-
-    sub foo { ... }
-    alias bar => 'foo';
-
-This will create a method I<bar> in the module's namespace that points to the
-same code reference as the one of the method I<foo>.
-
-You can alias any method defined in the namespace of the current class
-(including inherited methods and accessors).
 
 =head2 METHOD MODIFIERS (HOOKS)
 
